@@ -3,6 +3,8 @@ contextBridge.exposeInMainWorld('studio', {
   image: input => ipcRenderer.invoke('studio:image', input),
   generate: input => ipcRenderer.invoke('studio:generate', input),
   cancelGeneration: () => ipcRenderer.invoke('studio:generate-cancel'),
+  describe: input => ipcRenderer.invoke('studio:describe', input),
+  cancelDescription: () => ipcRenderer.invoke('studio:describe-cancel'),
   saveImage: input => ipcRenderer.invoke('studio:image-save', input),
   openMascotTool: state => ipcRenderer.invoke('studio:mascot-tool', state),
   exportMascot: state => ipcRenderer.invoke('studio:mascot-export', state),

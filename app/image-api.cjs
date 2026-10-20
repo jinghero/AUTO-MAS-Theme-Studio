@@ -2,14 +2,16 @@
 const MAX_IMAGE = 8 * 1024 * 1024
 const MAX_RESPONSE = 14 * 1024 * 1024
 function endpointAddress(value, editing = false) {
+  return apiAddress(value, `images/${editing ? 'edits' : 'generations'}`)
+}
+function apiAddress(value, operation) {
   let url
   try { url = new URL(value) } catch { throw new Error('请填写完整的 API 地址，例如 https://api.openai.com/v1') }
   checkURL(url)
   const pathname = url.pathname.replace(/\/+$/, '')
-  const operation = editing ? 'edits' : 'generations'
-  url.pathname = /\/images\/(?:generations|edits)$/.test(pathname)
-    ? pathname.replace(/\/images\/(?:generations|edits)$/, `/images/${operation}`)
-    : `${pathname || '/v1'}/images/${operation}`
+  url.pathname = /\/(?:images\/(?:generations|edits)|chat\/completions)$/.test(pathname)
+    ? pathname.replace(/\/(?:images\/(?:generations|edits)|chat\/completions)$/, `/${operation}`)
+    : `${pathname || '/v1'}/${operation}`
   return url.href
 }
 function checkURL(url) {
@@ -22,8 +24,8 @@ function redact(value, key) {
   if (key) message = message.split(key).join('[密钥已隐藏]')
   return message.replace(/Bearer\s+[^\s"',]+/gi, 'Bearer [已隐藏]').replace(/sk-[A-Za-z0-9_-]{8,}/g, '[密钥已隐藏]').slice(0, 350)
 }
-async function readLimited(response, max) {
-  if (Number(response.headers.get('content-length')) > max) throw new Error('接口返回内容过大，请降低生成尺寸')
+async function readLimited(response, max, message = '接口返回内容过大，请降低生成尺寸') {
+  if (Number(response.headers.get('content-length')) > max) throw new Error(message)
   const reader = response.body?.getReader()
   if (!reader) throw new Error('接口没有返回内容')
   const chunks = []
@@ -33,7 +35,7 @@ async function readLimited(response, max) {
       const { done, value } = await reader.read()
       if (done) break
       size += value.length
-      if (size > max) { await reader.cancel(); throw new Error('接口返回内容过大，请降低生成尺寸') }
+      if (size > max) { await reader.cancel(); throw new Error(message) }
       chunks.push(Buffer.from(value))
     }
   } finally { reader.releaseLock() }
@@ -64,11 +66,25 @@ async function downloadImage(value, signal, fetcher) {
   }
   throw new Error('图片下载重定向次数过多')
 }
+function validateReferences(value, required = false) {
+  const references = value ?? []
+  if (!Array.isArray(references) || references.length > 4) throw new Error('参考图最多 4 张')
+  if (required && !references.length) throw new Error('请先添加至少 1 张参考图')
+  let total = 0
+  return references.map(reference => {
+    const match = typeof reference?.url === 'string' && /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(reference.url)
+    if (!match || match[2].length > Math.ceil(MAX_IMAGE / 3) * 4) throw new Error('参考图需为 PNG、JPEG 或 WebP，单张不超过 8 MB')
+    const data = Buffer.from(match[2], 'base64'), info = imageURL(data)
+    if (info.mime !== `image/${match[1]}`) throw new Error('参考图内容与文件格式不一致')
+    total += data.length
+    if (total > 16 * 1024 * 1024) throw new Error('参考图总大小不能超过 16 MB')
+    return { ...info, data }
+  })
+}
 async function generateImage(input, signal, fetcher = fetch) {
   const key = typeof input?.apiKey === 'string' ? input.apiKey.trim() : ''
   try {
-    const references = input?.referenceImages ?? []
-    if (!Array.isArray(references) || references.length > 4) throw new Error('参考图最多 4 张')
+    const references = validateReferences(input?.referenceImages)
     const address = endpointAddress(input?.baseURL, references.length > 0)
     if (!key || key.length > 4096 || /[\r\n]/.test(key)) throw new Error('请填写有效的 API Key')
     const model = typeof input.model === 'string' ? input.model.trim() : ''
@@ -87,16 +103,9 @@ async function generateImage(input, signal, fetcher = fetch) {
     if (references.length) {
       requestBody = new FormData()
       for (const [name, value] of Object.entries(payload)) requestBody.append(name, String(value))
-      let total = 0
       for (const [index, reference] of references.entries()) {
-        const match = typeof reference?.url === 'string' && /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(reference.url)
-        if (!match || match[2].length > Math.ceil(MAX_IMAGE / 3) * 4) throw new Error('参考图需为 PNG、JPEG 或 WebP，单张不超过 8 MB')
-        const bytes = Buffer.from(match[2], 'base64'), info = imageURL(bytes)
-        if (info.mime !== `image/${match[1]}`) throw new Error('参考图内容与文件格式不一致')
-        total += bytes.length
-        if (total > 16 * 1024 * 1024) throw new Error('参考图总大小不能超过 16 MB')
-        const extension = match[1] === 'jpeg' ? 'jpg' : match[1]
-        requestBody.append(references.length === 1 ? 'image' : 'image[]', new Blob([bytes], { type: info.mime }), `reference-${index + 1}.${extension}`)
+        const extension = reference.mime === 'image/jpeg' ? 'jpg' : reference.mime.slice(6)
+        requestBody.append(references.length === 1 ? 'image' : 'image[]', new Blob([reference.data], { type: reference.mime }), `reference-${index + 1}.${extension}`)
       }
     } else headers['Content-Type'] = 'application/json'
     const response = await fetcher(address, {
@@ -135,4 +144,4 @@ async function generateImage(input, signal, fetcher = fetch) {
     throw new Error(redact(error.message, key))
   }
 }
-module.exports = { generateImage, endpointAddress, redact, imageURL }
+module.exports = { generateImage, endpointAddress, redact, imageURL, apiAddress, readLimited, validateReferences }

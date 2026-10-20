@@ -10,9 +10,19 @@
     cursor: '创作一个鼠标箭头光标素材：单个箭头，尖端朝向左上角，主体位于方形画布中央且完整可见，保留小幅透明边距。使用粗而清晰的外轮廓、大色块和极简细节，保证缩小到32至64像素后仍可识别。透明背景，无阴影、无底板、无场景，不要光标合集、文字、字母或水印。',
   }
   const defaults = { baseURL: 'https://api.openai.com/v1', model: 'gpt-image-2', target: 'background',
-    style: '清新森林、鼠尾草绿与奶油白、柔和手绘、安静温暖', size: '1536x1024', quality: '', responseFormat: '', transparent: false }
+    style: '清新森林、鼠尾草绿与奶油白、柔和手绘、安静温暖', size: '1536x1024', quality: '', responseFormat: '', transparent: false,
+    visionModel:'', visionSeparate:false, visionBaseURL:'https://api.openai.com/v1' }
   let hooks, generating = false, timer, started = 0
   let referenceImages = [], referenceOwner, loadingReferences = false
+  let describing = false, promptCandidate = null, referenceVersion = 0
+  function clearSuggestion() { promptCandidate = null; $('ai-prompt-suggestion').hidden = true; $('ai-suggested-prompt').value = '' }
+  function promptContext() {
+    return { owner:hooks.getState(), target:settings().target, style:settings().style, color:hooks.getState().manifest.tokens.colorPrimary, references:referenceVersion }
+  }
+  function sameContext(context) {
+    const current = promptContext()
+    return Object.keys(context).every(key => context[key] === current[key])
+  }
   function settings() {
     const state = hooks.getState()
     state.generator ||= { ...defaults }
@@ -23,7 +33,8 @@
     return `${templates[config.target] || templates.background}\n\n统一风格：${config.style || defaults.style}。\n配色以 ${theme.tokens.colorPrimary} 为主色，与主题「${theme.name || '我的主题'}」保持一致。\n如有参考图，请参考其中的主体特征和视觉风格，按照本次用途重新构图。\n素材将用于 AUTO-MAS 的${targets[config.target]}；请直接输出可用图片。`
   }
   function renderReferences() {
-    if (referenceOwner !== hooks.getState()) { referenceOwner = hooks.getState(); referenceImages = [] }
+    if (referenceOwner !== hooks.getState()) { referenceOwner = hooks.getState(); referenceImages = []; referenceVersion++; clearSuggestion() }
+    const busy = generating || describing || loadingReferences
     const list = $('ai-reference-list')
     list.replaceChildren()
     $('ai-reference-count').textContent = `${referenceImages.length} / 4`
@@ -35,17 +46,19 @@
       const size = document.createElement('small'); size.textContent = `${reference.width} × ${reference.height} · ${Math.ceil(reference.bytes / 1024)} KB`
       detail.append(name, size)
       const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '移除'
-      remove.setAttribute('aria-label', `移除参考图 ${index + 1}`); remove.disabled = generating || loadingReferences
-      remove.onclick = () => { referenceImages.splice(index, 1); renderReferences() }
+      remove.setAttribute('aria-label', `移除参考图 ${index + 1}`); remove.disabled = busy
+      remove.onclick = () => { referenceImages.splice(index, 1); referenceVersion++; clearSuggestion(); renderReferences() }
       item.append(image, detail, remove); list.append(item)
     })
-    $('ai-reference-add').disabled = generating || loadingReferences || referenceImages.length >= 4
+    $('ai-reference-add').disabled = busy || referenceImages.length >= 4
     $('ai-reference-add').textContent = loadingReferences ? '正在读取参考图…' : '＋ 添加参考图'
-    $('ai-generate').disabled = generating || loadingReferences
+    $('ai-generate').disabled = busy
+    $('ai-describe').disabled = busy || !referenceImages.length
+    $('ai-describe').textContent = describing ? '正在生成提示词…' : '根据参考图生成提示词'
     if (!generating) $('ai-generate').textContent = referenceImages.length ? '✦ 参考图生成' : '✦ 生成图片'
   }
   async function addReferences(files) {
-    if (!files.length || generating || loadingReferences) return
+    if (!files.length || generating || describing || loadingReferences) return
     renderReferences()
     const owner = hooks.getState()
     loadingReferences = true; renderReferences()
@@ -66,7 +79,7 @@
         })
         added.push({ name: file.name, url, ...await window.themeImages.inspect(url, file.name) })
       }
-      if (owner === hooks.getState()) referenceImages.push(...added)
+      if (owner === hooks.getState()) { referenceImages.push(...added); referenceVersion++; clearSuggestion() }
     } catch (error) { hooks.toast(error.message, true) }
     finally { loadingReferences = false; $('ai-reference-file').value = ''; renderReferences() }
   }
@@ -86,10 +99,13 @@
     if (!hooks) return
     const config = settings()
     for (const [id, key] of [['ai-base-url', 'baseURL'], ['ai-model', 'model'], ['ai-target', 'target'], ['ai-style', 'style'],
-      ['ai-size', 'size'], ['ai-quality', 'quality'], ['ai-response-format', 'responseFormat']]) $(id).value = config[key] ?? defaults[key]
+      ['ai-size', 'size'], ['ai-quality', 'quality'], ['ai-response-format', 'responseFormat'], ['ai-vision-model','visionModel'], ['ai-vision-url','visionBaseURL']]) $(id).value = config[key] ?? defaults[key]
     if (!config.prompt) config.prompt = presetPrompt()
     $('ai-prompt').value = config.prompt
     $('ai-transparent').checked = config.transparent === true
+    $('ai-vision-separate').checked = config.visionSeparate === true
+    $('ai-vision-custom').hidden = config.visionSeparate !== true
+    if (promptCandidate && !sameContext(promptCandidate)) clearSuggestion()
     renderReferences()
     renderResult()
   }
@@ -104,7 +120,7 @@
     if (selected) { render(); $('ai-status').textContent ||= '准备就绪，填写 API Key 后即可生成。' }
   }
   async function generate() {
-    if (generating || loadingReferences) return
+    if (generating || describing || loadingReferences) return
     const apiKey = $('ai-key').value.trim()
     if (!apiKey) { $('ai-key').focus(); hooks.toast('请在工具里填写 API Key', true); return }
     const config = structuredClone(settings())
@@ -136,6 +152,35 @@
       renderReferences()
     }
   }
+  async function describe() {
+    if (generating || describing || loadingReferences) return
+    renderReferences()
+    if (!referenceImages.length) { hooks.toast('请先添加至少 1 张参考图', true); return }
+    const config = structuredClone(settings()), context = promptContext()
+    if (!config.visionModel?.trim()) { document.querySelector('.ai-vision-settings').open = true; $('ai-vision-model').focus(); hooks.toast('请填写支持图片输入的看图模型名', true); return }
+    const keyInput = $(config.visionSeparate ? 'ai-vision-key' : 'ai-key'), apiKey = keyInput.value.trim()
+    if (!apiKey) { document.querySelector(config.visionSeparate ? '.ai-vision-settings' : '#ai-settings').open = true; keyInput.focus(); hooks.toast('请填写看图服务使用的 API Key', true); return }
+    const input = { baseURL:config.visionSeparate ? config.visionBaseURL || defaults.visionBaseURL : config.baseURL,
+      apiKey, model:config.visionModel,
+      instructions:`用途：${targets[config.target]}。\n${templates[config.target] || templates.background}\n从参考图的实际主体、配色和画风提取描述。当前风格偏好「${config.style || '未指定'}」仅作辅助，冲突时优先使用参考图的可见特征。主题主色 ${context.color} 仅供搭配参考。`,
+      referenceImages:referenceImages.map(({url}) => ({url})) }
+    describing = true; renderReferences(); $('ai-describe-cancel').hidden = false
+    $('ai-describe-status').className = 'validation'
+    const began = Date.now(), update = () => { $('ai-describe-status').textContent = `正在分析 ${input.referenceImages.length} 张参考图 · ${Math.floor((Date.now() - began) / 1000)} 秒` }
+    update(); const progressTimer = setInterval(update, 1000)
+    try {
+      const response = await window.studio.describe(input)
+      if (!response.success) throw new Error(response.error)
+      if (!sameContext(context)) throw new Error('主题、参考图、用途或风格已改变，请重新生成提示词')
+      promptCandidate = context
+      $('ai-suggested-prompt').value = response.prompt; $('ai-prompt-suggestion').hidden = false
+      $('ai-describe-status').className = 'validation success'
+      $('ai-describe-status').textContent = '候选提示词已生成，可编辑后点击「使用此提示词」。'
+      hooks.toast('候选提示词已生成，可编辑后使用')
+      $('ai-prompt-suggestion').scrollIntoView({ block:'nearest' })
+    } catch (error) { $('ai-describe-status').className = 'validation error'; $('ai-describe-status').textContent = error.message }
+    finally { clearInterval(progressTimer); describing = false; $('ai-describe-cancel').hidden = true; renderReferences() }
+  }
   async function apply() {
     const result = hooks.getState().aiResult
     if (!result) return
@@ -164,7 +209,18 @@
     $('ai-reference-add').onclick = () => $('ai-reference-file').click()
     $('ai-reference-file').onchange = () => addReferences(Array.from($('ai-reference-file').files))
     for (const id of ['ai-icon-key']) for (const option of $('icon-key').options) $(id).append(option.cloneNode(true))
-    for (const [id, key] of [['ai-base-url', 'baseURL'], ['ai-model', 'model'], ['ai-style', 'style'], ['ai-prompt', 'prompt'], ['ai-size', 'size']]) $(id).oninput = () => { settings()[key] = $(id).value; hooks.changed() }
+    for (const [id, key] of [['ai-base-url', 'baseURL'], ['ai-model', 'model'], ['ai-style', 'style'], ['ai-prompt', 'prompt'], ['ai-size', 'size'], ['ai-vision-model','visionModel'], ['ai-vision-url','visionBaseURL']]) $(id).oninput = () => { settings()[key] = $(id).value; if (key === 'style') clearSuggestion(); hooks.changed() }
+    $('ai-vision-separate').onchange = () => { settings().visionSeparate = $('ai-vision-separate').checked; $('ai-vision-custom').hidden = !settings().visionSeparate; hooks.changed() }
+    $('ai-describe').onclick = describe
+    $('ai-describe-cancel').onclick = async () => { $('ai-describe-cancel').disabled = true; await window.studio.cancelDescription(); $('ai-describe-cancel').disabled = false }
+    $('ai-discard-prompt').onclick = clearSuggestion
+    $('ai-use-prompt').onclick = () => {
+      if (!promptCandidate || !sameContext(promptCandidate)) { clearSuggestion(); hooks.toast('参考图或生成要求已改变，请重新生成提示词', true); return }
+      const prompt = $('ai-suggested-prompt').value.trim()
+      if (!prompt || prompt.length > 16000) { hooks.toast('提示词需要在 1–16000 字以内', true); return }
+      settings().prompt = prompt; $('ai-prompt').value = prompt; clearSuggestion(); hooks.changed()
+      $('ai-prompt').focus(); hooks.toast('已使用生成的提示词，可继续编辑或生成图片')
+    }
     for (const [id, key] of [['ai-quality', 'quality'], ['ai-response-format', 'responseFormat']]) $(id).onchange = () => { settings()[key] = $(id).value; hooks.changed() }
     $('ai-target').onchange = () => {
       const config = settings(); config.target = $('ai-target').value

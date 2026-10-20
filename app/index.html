@@ -63,10 +63,25 @@
           <button id="ai-reference-add" class="button secondary full" type="button">＋ 添加参考图</button>
           <input id="ai-reference-file" type="file" accept=".png,.jpg,.jpeg,.webp" multiple hidden>
           <p class="hint">最多 4 张，单张 8 MB、合计 16 MB。仅本次使用，不写入草稿或主题包；生成时上传到所填服务商。服务商需支持参考图生成。</p>
+          <details class="ai-vision-settings"><summary>参考图转提示词设置</summary>
+            <label class="field">看图模型<input id="ai-vision-model" placeholder="填写支持图片输入的对话模型名" maxlength="200" spellcheck="false"><small>看图模型与生图模型分别填写，默认复用上方服务地址和 API Key</small></label>
+            <label class="checkbox-field"><input id="ai-vision-separate" type="checkbox">使用独立的看图服务</label>
+            <div id="ai-vision-custom" hidden>
+              <label class="field">看图 API 地址<input id="ai-vision-url" type="url" placeholder="https://api.openai.com/v1" spellcheck="false"><small>支持基础地址或完整 /chat/completions 地址</small></label>
+              <label class="field">看图 API Key<input id="ai-vision-key" type="password" autocomplete="off" placeholder="填写看图服务的 API Key" spellcheck="false"><small>仅本次运行使用，不写入草稿或主题包</small></label>
+            </div>
+          </details>
+          <div class="ai-actions"><button id="ai-describe" class="button secondary full" type="button" disabled>根据参考图生成提示词</button><button id="ai-describe-cancel" class="button secondary" type="button" hidden>取消</button></div>
+          <p class="hint">点击时会将参考图与用途要求发送到看图服务，由服务商计费。生成结果可先编辑、再使用。</p>
+          <p id="ai-describe-status" class="validation" role="status"></p>
         </section>
         <label class="field">灵感与风格<input id="ai-style" maxlength="800" placeholder="例如：森林、奶油绿、柔和手绘"><small>用于套用内置提示词；你也可以直接编辑下方提示词</small></label>
         <div class="prompt-heading"><label for="ai-prompt">提示词</label><button id="ai-reset-prompt" class="text-button">套用内置提示词 ↻</button></div>
         <textarea id="ai-prompt" rows="10" maxlength="16000" spellcheck="false"></textarea>
+        <section id="ai-prompt-suggestion" class="ai-prompt-suggestion" hidden>
+          <label class="field">生成的候选提示词<textarea id="ai-suggested-prompt" rows="8" maxlength="16000" spellcheck="false"></textarea><small>可先编辑，使用后替换上方提示词。</small></label>
+          <div class="ai-actions"><button id="ai-use-prompt" class="button primary full" type="button">使用此提示词</button><button id="ai-discard-prompt" class="button secondary" type="button">放弃</button></div>
+        </section>
         <label class="field ai-size-field">生成尺寸<input id="ai-size" list="ai-sizes" placeholder="1536x1024" spellcheck="false"><datalist id="ai-sizes"><option value="1536x1024"><option value="1024x1024"><option value="1024x1536"><option value="auto"></datalist></label>
         <details class="ai-advanced"><summary>高级选项（按服务商支持情况设置）</summary><label class="field">生成质量<select id="ai-quality"><option value="">使用服务商默认值</option><option value="auto">auto</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="standard">standard（兼容服务）</option><option value="hd">hd（兼容服务）</option></select></label><label class="field">返回格式<select id="ai-response-format"><option value="">自动（不额外传参数）</option><option value="b64_json">b64_json（兼容服务）</option><option value="url">url（兼容服务）</option></select></label><label class="checkbox-field"><input id="ai-transparent" type="checkbox">请求透明背景（接口需支持）</label></details>
         <div class="tip ai-tip"><span>✦</span><p>每次生成 1 张图片，由你的服务商计费。点击生成时会把提示词和已选参考图发送到所填 API 地址。</p></div>

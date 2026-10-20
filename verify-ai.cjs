@@ -7,14 +7,18 @@ const dep = createRequire(path.join(__dirname, 'package.json'))
 const { _electron: electron } = dep('@playwright/test')
 const { readAppearancePackage } = require('./app/compat/appearanceService')
 const { endpointAddress, generateImage } = require('./app/image-api.cjs')
+const { apiAddress } = require('./app/image-api.cjs')
+const { describeReferences } = require('./app/prompt-api.cjs')
 const root = __dirname, qa = path.join(root, 'qa')
 const packaged = process.argv.includes('--packaged')
 const executable = packaged ? path.join(root, 'dist/MAS创作工具箱/MAS主题工坊.exe') : dep('electron')
 const png = fs.readFileSync(path.join(qa, 'background.png'))
 const key = 'local-test-credential-for-fixture-only'
+const visionKey = 'local-vision-credential-for-fixture-only'
+const visionPrompt = '柔和手绘的森林背景，紫色与浅黄色的配色，主体放在画面右侧，左侧留白，低对比光线，无文字、无标志、无水印。'
 const requests = [], imageRequests = [], checks = [], errors = []
 const ok = label => { checks.push(label); console.log('PASS', label) }
-let address
+let address, pendingVision
 const server = http.createServer(async (request, response) => {
   if (request.url === '/generated.png') {
     imageRequests.push(request.headers)
@@ -33,6 +37,15 @@ const server = http.createServer(async (request, response) => {
     }
   } else data = JSON.parse(raw.toString())
   requests.push({ path: request.url, headers: request.headers, data, images })
+  if (request.url.endsWith('/chat/completions')) {
+    if (data.model === 'vision-wait') { pendingVision = response; return }
+    if (data.model === 'vision-auth-error') { response.writeHead(401, {'Content-Type':'application/json'}); response.end(JSON.stringify({error:{message:`Invalid key ${request.headers.authorization}`}})); return }
+    if (data.model === 'vision-unsupported') { response.writeHead(400, {'Content-Type':'application/json'}); response.end('{}'); return }
+    const content = data.model === 'vision-empty' ? null : data.model === 'vision-leak' ? request.headers.authorization.slice(7)
+      : data.model === 'vision-parts' ? [{type:'text',text:visionPrompt}] : visionPrompt
+    response.writeHead(200, {'Content-Type':'application/json'})
+    response.end(JSON.stringify({choices:[{finish_reason:data.model === 'vision-length' ? 'length' : 'stop',message:{content}}]})); return
+  }
   if (data.model === 'unsupported-reference') { response.writeHead(404, { 'Content-Type':'application/json' }); response.end('{}'); return }
   if (data.model === 'auth-error') { response.writeHead(401, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ error: { message: `Invalid key ${key}` } })); return }
   if (data.model === 'wait-model') { response.on('close', () => {}); return }
@@ -52,6 +65,8 @@ async function verify() {
   assert.throws(() => endpointAddress('http://remote.example/v1'))
   assert.throws(() => endpointAddress('https://username:password@example.com/v1'))
   ok('兼容基础地址、完整接口路径与地址约束')
+  assert.equal(apiAddress('https://example.com/v2/images/edits', 'chat/completions'), 'https://example.com/v2/chat/completions')
+  assert.equal(apiAddress('https://example.com/v2/chat/completions', 'chat/completions'), 'https://example.com/v2/chat/completions')
   const input = { baseURL:address + '/v1', apiKey:key, model:'fixture-model', prompt:'fixture prompt' }
   let invalidCalls = 0
   const noFetch = async () => { invalidCalls++; throw new Error('Invalid references must not reach network') }
@@ -66,6 +81,9 @@ async function verify() {
   await assert.rejects(generateImage({...input, referenceImages:Array(3).fill({url:'data:image/png;base64,' + large.toString('base64')})}, undefined, noFetch), /总大小不能超过 16 MB/)
   assert.equal(invalidCalls, 0)
   ok('参考图数量、格式、单张大小与总大小校验，非法输入不发送请求')
+  await assert.rejects(describeReferences({...input, instructions:'主题背景', referenceImages:[]}, undefined, noFetch), /至少 1 张/)
+  await assert.rejects(describeReferences({...input, model:'', instructions:'主题背景'}, undefined, noFetch), /看图模型名/)
+  assert.equal(invalidCalls, 0)
   const application = await electron.launch({ executablePath: executable, args: packaged ? [] : [path.join(root, 'app')], timeout: 30000 })
   const page = await application.firstWindow()
   page.on('pageerror', error => errors.push(error.message))
@@ -76,6 +94,9 @@ async function verify() {
     await page.locator('#ai-base-url').fill(`${address}/v1`)
     await page.locator('#ai-key').fill(key)
     await page.locator('#ai-model').fill('fixture-model')
+    await page.locator('.ai-vision-settings summary').click()
+    await page.locator('#ai-vision-model').fill('')
+    await page.locator('#ai-vision-separate').uncheck()
     await page.selectOption('#ai-target', 'background')
     const prompt = await page.locator('#ai-prompt').inputValue()
     assert(prompt.includes('左侧') && prompt.includes('无文字'))
@@ -138,6 +159,52 @@ async function verify() {
     assert.equal(multiReference.images[0].type, 'image/png')
     assert.equal(multiReference.images[1].type, 'image/webp')
     ok('参考图上传与预览、无效文件保留原图、多图真实 multipart 请求与原始字节完整保留')
+    await page.locator('#ai-describe').click()
+    await page.waitForFunction(() => document.getElementById('toast').textContent.includes('看图模型名'))
+    await page.locator('#ai-vision-model').fill('vision-model')
+    const originalPrompt = await page.locator('#ai-prompt').inputValue()
+    await page.locator('#ai-describe').click()
+    await page.waitForFunction(() => !document.getElementById('ai-prompt-suggestion').hidden)
+    assert.equal(await page.locator('#ai-prompt').inputValue(), originalPrompt)
+    assert.equal(await page.locator('#ai-suggested-prompt').inputValue(), visionPrompt)
+    const visionRequest = requests.at(-1)
+    assert.equal(visionRequest.path, '/v1/chat/completions')
+    assert.equal(visionRequest.headers.authorization, `Bearer ${key}`)
+    assert.equal(visionRequest.data.model, 'vision-model')
+    const visionContent = visionRequest.data.messages.find(message => message.role === 'user').content
+    assert(visionContent[0].text.includes('主题背景') && visionContent[0].text.includes('雨后竹林'))
+    assert.deepEqual(visionContent.slice(1).map(part => part.image_url.url), referenceUrls)
+    await page.locator('#ai-suggested-prompt').fill(visionPrompt + ' 不画软件界面。')
+    await page.screenshot({path:path.join(qa, packaged ? 'ai-prompt-portable.png' : 'ai-prompt.png')})
+    await page.locator('#ai-use-prompt').click()
+    assert.equal(await page.locator('#ai-prompt').inputValue(), visionPrompt + ' 不画软件界面。')
+    ok('看图模型收到多张参考图与用途风格，候选不覆盖原文，编辑后明确使用')
+    await page.locator('#ai-vision-separate').check()
+    await page.locator('#ai-vision-url').fill(`${address}/separate/chat/completions`)
+    await page.locator('#ai-vision-key').fill(visionKey)
+    await page.locator('#ai-vision-model').fill('vision-parts')
+    await page.locator('#ai-describe').click()
+    await page.waitForFunction(() => !document.getElementById('ai-prompt-suggestion').hidden)
+    assert.equal(requests.at(-1).path, '/separate/chat/completions')
+    assert.equal(requests.at(-1).headers.authorization, `Bearer ${visionKey}`)
+    assert.equal(await page.locator('#ai-suggested-prompt').inputValue(), visionPrompt)
+    await page.locator('#ai-discard-prompt').click()
+    const keptPrompt = await page.locator('#ai-prompt').inputValue()
+    for (const [model, message] of [['vision-auth-error','API Key 无效'],['vision-unsupported','模型支持图片输入'],['vision-empty','没有返回可用提示词'],['vision-length','未完整返回提示词'],['vision-leak','返回内容包含密钥']]) {
+      await page.locator('#ai-vision-model').fill(model)
+      await page.locator('#ai-describe').click()
+      await page.waitForFunction(message => document.getElementById('ai-describe-status').textContent.includes(message), message)
+      assert.equal(await page.locator('#ai-prompt').inputValue(), keptPrompt)
+      assert(!(await page.locator('#ai-describe-status').textContent()).includes(visionKey))
+      assert.equal(await page.locator('#ai-prompt-suggestion').isVisible(), false)
+    }
+    await page.locator('#ai-vision-model').fill('vision-wait')
+    await page.locator('#ai-describe').click()
+    await page.locator('#ai-describe-cancel').click()
+    await page.waitForFunction(() => document.getElementById('ai-describe-status').textContent.includes('已取消'))
+    assert.equal(await page.locator('#ai-prompt').inputValue(), keptPrompt)
+    await page.locator('#ai-vision-model').fill('vision-model')
+    ok('独立看图服务与密钥、文本分段响应、鉴权与能力错误、空结果、截断、密钥脱敏和取消')
     await page.getByRole('button', {name:'移除参考图 1', exact:true}).click()
     await page.locator('#ai-generate').click()
     await page.waitForFunction(() => document.getElementById('ai-status').textContent.includes('生成完成'))
@@ -204,13 +271,14 @@ async function verify() {
     assert(!JSON.stringify(checked).includes(key))
     const dataPath = await application.evaluate(({ app }) => app.getPath('userData'))
     const draft = fs.readFileSync(path.join(dataPath, 'draft.json'), 'utf8')
-    assert(!draft.includes(key)); assert(!draft.includes('apiKey'))
+    assert(!draft.includes(key)); assert(!draft.includes(visionKey)); assert(!draft.includes('apiKey'))
     for (const url of referenceUrls) assert(!draft.includes(url))
     assert(!draft.includes('reference-private-'))
     assert(!JSON.stringify(checked).includes('reference-private-'))
     const exportedFiles = new (dep('adm-zip'))(output).getEntries().filter(entry => !entry.isDirectory).map(entry => entry.getData())
     for (const referencePath of referencePaths) assert(!exportedFiles.some(bytes => bytes.equals(fs.readFileSync(referencePath))))
     assert(!fs.readFileSync(output).includes(Buffer.from(key)))
+    assert(!fs.readFileSync(output).includes(Buffer.from(visionKey)))
     ok('原图保存、生成素材打包、草稿与主题包均不含密钥或参考图')
     await page.locator('#ai-base-url').fill('https://api.openai.com/v1')
     await page.locator('#ai-model').fill('gpt-image-2')
@@ -219,15 +287,31 @@ async function verify() {
     await page.locator('#ai-transparent').uncheck()
     await page.selectOption('#ai-quality', '')
     await page.selectOption('#ai-response-format', '')
+    await page.locator('#ai-vision-url').fill('https://api.openai.com/v1')
+    await page.locator('#ai-vision-key').fill('')
+    await page.locator('#ai-vision-separate').uncheck()
     await page.locator('#ai-settings summary').click()
     await page.evaluate(() => { document.getElementById('toast').hidden = true; document.querySelector('.workspace').scrollTop = 0 })
     await page.screenshot({ path: path.join(qa, packaged ? 'ai-portable.png' : 'ai.png') })
     await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 720))
     await page.waitForTimeout(100)
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    await page.locator('#ai-vision-model').fill('vision-wait')
+    await page.locator('#ai-settings summary').click()
+    await page.locator('#ai-base-url').fill(`${address}/v1`)
+    await page.locator('#ai-key').fill(key)
+    pendingVision = null
+    await page.locator('#ai-describe').click()
+    await page.waitForFunction(() => !document.getElementById('ai-describe-cancel').hidden)
+    for (let count = 0; !pendingVision && count < 100; count++) await page.waitForTimeout(10)
+    assert(pendingVision)
     await page.locator('#new').click(); await page.locator('#confirm-ok').click()
+    pendingVision.writeHead(200, {'Content-Type':'application/json'}); pendingVision.end(JSON.stringify({choices:[{message:{content:visionPrompt}}]}))
+    await page.waitForFunction(() => document.getElementById('ai-describe-status').textContent.includes('已改变'))
     await page.locator('[data-tab="ai"]').click()
     assert.equal(await page.locator('#ai-reference-count').textContent(), '0 / 4')
+    assert.equal(await page.locator('#ai-prompt-suggestion').isVisible(), false)
+    assert.notEqual(await page.locator('#ai-prompt').inputValue(), visionPrompt)
     assert.deepEqual(errors, [])
     ok('AI 界面最小窗口与无脚本/资源错误')
     fs.writeFileSync(path.join(qa, packaged ? 'ai-portable-report.json' : 'ai-report.json'), JSON.stringify({ packaged, mockedService: true, checks, errors }, null, 2))

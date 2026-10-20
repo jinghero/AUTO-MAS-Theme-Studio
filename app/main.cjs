@@ -4,6 +4,7 @@ const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { readPackage, buildPackage, buildMascotPackage, decodeImage } = require('./package-service.cjs')
 const { generateImage, imageURL } = require('./image-api.cjs')
+const { describeReferences } = require('./prompt-api.cjs')
 const { loadBytes } = require('./mascot-tool/package-loader.cjs')
 
 app.setName('MAS 主题工坊')
@@ -17,6 +18,7 @@ const draftPath = path.join(dataPath, 'draft.json')
 app.disableHardwareAcceleration()
 let window, readyToClose = false
 let generationController
+let descriptionController
 let mascotWindow
 const rendererURL = pathToFileURL(path.join(__dirname, 'index.html')).href
 const mascotURL = pathToFileURL(path.join(__dirname, 'mascot-tool/index.html')).href
@@ -36,7 +38,7 @@ function imageInfo(url) {
 }
 handler('studio:image', input => ({ info: imageInfo(input.url) }))
 handler('studio:generate', async input => {
-  if (generationController) throw new Error('已有图片正在生成，请等待或取消后重试')
+  if (generationController || descriptionController) throw new Error('已有 AI 请求正在进行，请等待或取消后重试')
   const controller = new AbortController()
   generationController = controller
   const timer = setTimeout(() => controller.abort('timeout'), 300000)
@@ -46,6 +48,15 @@ handler('studio:generate', async input => {
   } finally { clearTimeout(timer); if (generationController === controller) generationController = null }
 })
 handler('studio:generate-cancel', () => { generationController?.abort('user'); return {} })
+handler('studio:describe', async input => {
+  if (descriptionController || generationController) throw new Error('已有 AI 请求正在进行，请等待或取消后重试')
+  const controller = new AbortController()
+  descriptionController = controller
+  const timer = setTimeout(() => controller.abort('timeout'), 120000)
+  try { return { prompt:await describeReferences(input, controller.signal) } }
+  finally { clearTimeout(timer); if (descriptionController === controller) descriptionController = null }
+})
+handler('studio:describe-cancel', () => { descriptionController?.abort('user'); return {} })
 handler('studio:image-save', async input => {
   const info = imageInfo(input.url)
   const data = decodeImage(input.url)
@@ -125,7 +136,7 @@ handler('studio:draft-save', input => {
   fs.renameSync(temporary, draftPath)
   return {}
 })
-handler('studio:close', () => { generationController?.abort('user'); mascotWindow?.close(); readyToClose = true; window.close(); return {} })
+handler('studio:close', () => { generationController?.abort('user'); descriptionController?.abort('user'); mascotWindow?.close(); readyToClose = true; window.close(); return {} })
 app.whenReady().then(() => {
   window = new BrowserWindow({
     width: 1440, height: 940, minWidth: 1000, minHeight: 720,
