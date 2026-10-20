@@ -52,6 +52,14 @@ npm test
 
 验证默认使用仓库附带的示例主题与桌宠。设置 `THEME_FIXTURE` 后，主题往返检查也可使用其他兼容的主题 ZIP。AI 检查使用本地模拟服务，不消耗实际 API 额度。
 
+打包后可运行 `npm run check:packaged`，验证便携版 EXE 的主题编辑、桌宠工具和 AI 接口流程。
+
+## 持续集成
+
+向 `main` 推送或提交以 `main` 为目标的 PR 时，GitHub Actions 会在 Windows 上安装锁定依赖、构建 MAS 预览、运行源码回归、打包并验证便携版 EXE。也可在 Actions 页面手动运行。
+
+成功后，运行页面的 Artifacts 提供 `MAS-Theme-Studio-Windows-x64` 下载，保留 14 天；失败时截图与 JSON 报告保留 7 天。CI 不需要生图 API Key，不会自动发布 Release。
+
 ## AI 生图
 
 在「AI 生图」中填写 OpenAI Images API 兼容地址、模型名和 API Key。默认地址为 `https://api.openai.com/v1`，默认模型名为 `gpt-image-2`，可修改为服务商提供的名称。

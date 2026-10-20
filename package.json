@@ -14,6 +14,7 @@
     "check": "node verify.cjs",
     "check:mas": "node verify-mas.cjs",
     "check:ai": "node verify-ai.cjs",
+    "check:packaged": "node verify.cjs --packaged && node verify-mas.cjs --packaged && node verify-ai.cjs --packaged && node verify-theme.cjs --packaged",
     "test": "node verify.cjs && node verify-mas.cjs && node verify-ai.cjs && node verify-theme.cjs && node verify-extra.cjs"
   },
   "dependencies": {
