@@ -3,4 +3,4 @@ Commit: cfcbad86e7d46c9747ef3d8932dafcded137b36c
 Source: frontend/electron/services
 License: AGPL-3.0
 Compiled from the included TypeScript files with TypeScript 5.9.3.
-Local extension: appearanceService.ts accepts optional tokens.colorPageTitle, matching the AUTO-MAS fix/emulator-appearance-surfaces-20261020 working tree based on a7c833670560d6457b867b8bb37be69d4c1f2dc0.
+Local extension: appearanceService.ts accepts optional tokens.colorPageTitle, matching AUTO-MAS commit 621cf5d81441fb199fed276aaaef6f68de7ad68e on fix/emulator-appearance-surfaces-20261020.
