@@ -29,6 +29,7 @@ async function build() {
   source.addLocalFolder(path.join(root, '.github'), '.github')
   source.addLocalFile(path.join(root, 'release.cjs'))
   source.addLocalFile(path.join(root, 'verify-icons.cjs'))
+  source.addLocalFile(path.join(root, 'verify-titles.cjs'))
   source.addLocalFile(path.join(root, 'capture-guide.cjs'))
   source.addLocalFile(path.join(root, 'guide.md'))
   source.addLocalFolder(path.join(root,'docs'),'docs')

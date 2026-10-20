@@ -70,6 +70,7 @@ function normalizeManifest(value) {
         (0, assetPackageService_1.fail)('tokens.colorPrimary 是必填项');
     const tokens = {
         colorPrimary,
+        colorPageTitle: assertOptionalHex(rawTokens.colorPageTitle, 'tokens.colorPageTitle'),
         colorBgLayout: assertOptionalHex(rawTokens.colorBgLayout, 'tokens.colorBgLayout'),
         colorBgContainer: assertOptionalHex(rawTokens.colorBgContainer, 'tokens.colorBgContainer'),
         colorBgElevated: assertOptionalHex(rawTokens.colorBgElevated, 'tokens.colorBgElevated'),

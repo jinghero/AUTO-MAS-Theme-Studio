@@ -16,8 +16,9 @@
     "check:mas": "node verify-mas.cjs",
     "check:ai": "node verify-ai.cjs",
     "check:icons": "node verify-icons.cjs",
-    "check:packaged": "node verify.cjs --packaged && node verify-mas.cjs --packaged && node verify-ai.cjs --packaged && node verify-icons.cjs --packaged && node verify-theme.cjs --packaged",
-    "test": "node verify.cjs && node verify-mas.cjs && node verify-ai.cjs && node verify-icons.cjs && node verify-theme.cjs && node verify-extra.cjs"
+    "check:titles": "node verify-titles.cjs",
+    "check:packaged": "node verify.cjs --packaged && node verify-mas.cjs --packaged && node verify-ai.cjs --packaged && node verify-icons.cjs --packaged && node verify-theme.cjs --packaged && node verify-titles.cjs --packaged",
+    "test": "node verify.cjs && node verify-mas.cjs && node verify-ai.cjs && node verify-icons.cjs && node verify-theme.cjs && node verify-extra.cjs && node verify-titles.cjs"
   },
   "dependencies": {
     "adm-zip": "0.5.17"

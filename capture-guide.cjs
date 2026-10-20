@@ -52,9 +52,19 @@ async function capture() {
     })
     await page.screenshot({path:path.join(output,name)})
   }
+  async function titleScreenshot() {
+    await page.locator('[data-tab="design"]').click()
+    await page.locator('#page-title-enabled').check()
+    await page.locator('#text-page-title').fill('#244a38'); await page.locator('#text-page-title').press('Tab')
+    await page.locator('#preview-page-title').click()
+    await page.frameLocator('#mas-preview-frame').locator('.page-title').waitFor()
+    await page.locator('#preview-page-title').scrollIntoViewIfNeeded()
+    await snap('guide-07-title-color.png')
+  }
   await page.locator('#theme-file').setInputFiles(path.join(root,'示例主题-林间来信.zip'))
   await page.locator('#confirm-ok').click()
   await page.locator('#name').fill('林间来信')
+  if (process.argv.includes('--titles-only')) { await titleScreenshot(); console.log(`Saved title screenshot to ${output}`); return }
   await snap('guide-01-theme.png')
   await page.locator('[data-tab="ai"]').click()
   await page.locator('#ai-base-url').fill('https://api.example.com/v1')
@@ -100,7 +110,8 @@ async function capture() {
   await page.locator('[data-tab="check"]').click(); await page.locator('#validate').click()
   await page.waitForFunction(() => document.getElementById('validation').textContent.includes('校验通过'))
   await snap('guide-06-export.png')
+  await titleScreenshot()
   if (errors.length) throw new Error(errors.join('\n'))
-  console.log(`Saved 6 guide screenshots to ${output}`)
+  console.log(`Saved 7 guide screenshots to ${output}`)
 }
 capture().catch(error => {console.error(error);process.exitCode=1}).finally(async () => {if(application)await application.close();server.closeAllConnections();server.close()})

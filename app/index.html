@@ -36,10 +36,16 @@
       </section>
       <section class="tab-panel" id="tab-design" hidden>
         <div class="panel-heading"><span class="eyebrow">02 / 配色与背景</span><h2>调出你的氛围</h2><p>右侧预览会随设置实时更新。</p></div>
-        <div class="field">主题模式<div class="segmented"><button id="mode-light" data-mode="light">☀ 浅色</button><button id="mode-dark" data-mode="dark">☾ 深色</button></div><small>切换模式会重置底色和文字色，保留主题色</small></div>
+        <div class="field">主题模式<div class="segmented"><button id="mode-light" data-mode="light">☀ 浅色</button><button id="mode-dark" data-mode="dark">☾ 深色</button></div><small>切换模式会重置底色和正文文字色，保留主题色与独立标题色</small></div>
         <div class="field">配色灵感<div id="palettes" class="palettes"></div><small>新建主题采用 MAS 默认蓝色；未覆盖的颜色由 MAS 自动生成</small></div>
         <button id="mas-default-colors" class="text-button">恢复 MAS 默认配色</button>
         <div id="color-fields" class="color-grid"></div>
+        <div class="field">
+          <label class="checkbox-field"><input id="page-title-enabled" type="checkbox">单独设置页面标题色</label>
+          <div id="page-title-fields" class="color-row" hidden>页面标题色<div class="color-input"><input id="color-page-title" type="color" aria-label="页面标题色"><input id="text-page-title" type="text" maxlength="7" spellcheck="false" aria-label="页面标题色十六进制"></div></div>
+          <small>仅影响托管管理等页面的大标题，不影响按钮、菜单与卡片标题。关闭时恢复各页原有样式；需搭配支持独立标题色的 MAS。</small>
+          <button id="preview-page-title" class="text-button" type="button">预览页面标题 →</button>
+        </div>
         <label class="field range-field">组件圆角 <output id="radius-value"></output><input id="radius" type="range" min="0" max="32" step="1"></label>
         <hr><h3>背景图片</h3><div id="background-slot"></div>
         <div id="background-controls">
