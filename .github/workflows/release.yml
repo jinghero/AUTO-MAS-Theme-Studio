@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Check release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Match tag to package versions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node release.cjs "$RELEASE_TAG"
+
+  build:
+    name: Build release
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish portable release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download verified portable app
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: MAS-Theme-Studio-Windows-x64
+          path: release
+
+      - name: Create SHA-256 checksum
+        run: node release.cjs "$RELEASE_TAG" release
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $releaseArgs = @(
+            'release', 'create', $env:RELEASE_TAG,
+            'release/MAS创作工具箱-便携版.zip', 'release/SHA256SUMS.txt',
+            '--repo', $env:GITHUB_REPOSITORY,
+            '--verify-tag', '--title', "MAS 创作工具箱 $env:RELEASE_TAG",
+            '--notes-file', '.github/RELEASE_NOTES.md', '--generate-notes'
+          )
+          if ($env:RELEASE_TAG.Contains('-')) { $releaseArgs += '--prerelease' }
+          else { $releaseArgs += '--latest' }
+          & gh @releaseArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -48,7 +48,7 @@ async function verifyUI() {
     console.log('PASS 移除背景后的清理与重新校验')
     await page.locator('#theme-file').setInputFiles(path.join(root, '示例主题-林间来信.zip'))
     await page.locator('#confirm-ok').click()
-    await page.locator('#draft-status').filter({ hasText: '草稿已保存' }).waitFor()
+    await page.waitForFunction(() => document.getElementById('draft-status').textContent.includes('草稿已保存'))
     await page.locator('[data-tab="assets"]').click()
     const promise = page.waitForEvent('filechooser')
     await page.locator('#cursor-slot .asset-buttons button').first().click()

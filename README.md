@@ -58,7 +58,13 @@ npm test
 
 向 `main` 推送或提交以 `main` 为目标的 PR 时，GitHub Actions 会在 Windows 上安装锁定依赖、构建 MAS 预览、运行源码回归、打包并验证便携版 EXE。也可在 Actions 页面手动运行。
 
-成功后，运行页面的 Artifacts 提供 `MAS-Theme-Studio-Windows-x64` 下载，保留 14 天；失败时截图与 JSON 报告保留 7 天。CI 不需要生图 API Key，不会自动发布 Release。
+成功后，运行页面的 Artifacts 提供 `MAS-Theme-Studio-Windows-x64` 下载，保留 14 天；失败时截图与 JSON 报告保留 7 天。CI 不需要生图 API Key。
+
+## 下载与发布
+
+在 [Releases](https://github.com/jinghero/AUTO-MAS-Theme-Studio/releases/latest) 下载便携 ZIP，解压后双击 `MAS主题工坊.exe` 即可使用，无需 Node.js。发布页同时提供 `SHA256SUMS.txt` 校验文件。
+
+维护者推送 `v` 开头的版本标签（如 `v1.0.0`）后，Release 工作流会检查标签与根目录、应用及锁文件的版本是否一致，复用完整 Windows CI，通过后上传便携 ZIP 和 SHA-256 校验文件。包含 `-` 的版本标签发布为预发布版本，其余发布为正式版。普通分支推送不会发布 Release。
 
 ## AI 生图
 

@@ -25,6 +25,8 @@ async function build() {
   const source = new AdmZip()
   source.addLocalFolder(path.join(root, 'app'), 'app')
   source.addLocalFolder(path.join(root, 'preview-src'), 'preview-src')
+  source.addLocalFolder(path.join(root, '.github'), '.github')
+  source.addLocalFile(path.join(root, 'release.cjs'))
   for (const name of ['package.json', 'package-lock.json', 'run.cjs', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', '.gitignore', 'setup.cjs', 'build.cjs', 'prepare-preview.cjs', 'build-preview.cjs', 'verify-mas.cjs', 'verify.cjs', 'verify-extra.cjs', 'verify-ai.cjs', 'verify-theme.cjs', '使用说明.txt']) source.addLocalFile(path.join(root, name))
   source.addFile('README.txt', Buffer.from('完整源码位于 app/ 与 preview-src/。\n开发环境安装 Node.js 22.16 或更新版本，在本目录运行 npm ci、npm start。\n便携版打包：npm run build:preview，然后 npm run build。\n便携运行无需 Node.js 或额外依赖；许可见 LICENSE 和 THIRD_PARTY_NOTICES.md。\n'))
   source.writeZip(path.join(output, 'source.zip'))
