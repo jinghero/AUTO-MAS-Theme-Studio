@@ -32,26 +32,57 @@ async function verify() {
     assert.equal(await frame.locator('body').evaluate(node=>getComputedStyle(node).backgroundColor),'rgb(0, 0, 0)')
     await page.locator('#mode-light').click()
     ok('默认明暗主题使用 MAS 相同的 Ant Design 算法')
-    for(const [width,height] of [[1000,720],[1440,940],[1920,1080],[1250,780],[1680,1000]]) {
+    async function verifyDock() {
+      await page.waitForFunction(() => {
+        const wrap = document.querySelector('.preview-wrap').getBoundingClientRect()
+        const viewport = document.getElementById('preview-viewport').getBoundingClientRect()
+        return wrap.width > 0 && wrap.height > 0 && ['left','right','top','bottom'].every(edge => Math.abs(wrap[edge] - viewport[edge]) <= 1)
+      })
+      const dimensions = await page.evaluate(() => {
+        const bounds = node => { const r = node.getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height} }
+        const workspace = document.querySelector('.workspace')
+        return {
+          width:innerWidth, scrollWidth:document.documentElement.scrollWidth,
+          wrap:bounds(document.querySelector('.preview-wrap')), viewport:bounds(document.getElementById('preview-viewport')),
+          frame:bounds(document.getElementById('mas-preview-frame')),
+          workspaceOverflow:workspace.scrollHeight - workspace.clientHeight,
+          transform:getComputedStyle(document.getElementById('mas-preview-frame')).transform,
+        }
+      })
+      assert(dimensions.scrollWidth <= dimensions.width)
+      assert(dimensions.workspaceOverflow <= 1, JSON.stringify(dimensions))
+      assert.equal(dimensions.transform, 'none')
+      for (const edge of ['left','right','top','bottom','width','height']) {
+        assert(Math.abs(dimensions.wrap[edge] - dimensions.viewport[edge]) <= 1, JSON.stringify(dimensions))
+        assert(Math.abs(dimensions.frame[edge] - dimensions.viewport[edge]) <= 1, JSON.stringify(dimensions))
+      }
+      const inner = await frame.locator('body').evaluate(() => ({width:innerWidth,height:innerHeight}))
+      assert(Math.abs(inner.width - dimensions.viewport.width) <= 1)
+      assert(Math.abs(inner.height - dimensions.viewport.height) <= 1)
+    }
+    for(const [width,height] of [[1000,720],[1440,940],[1920,1080],[1920,780],[1250,780],[1250,1000],[1680,1000]]) {
       await application.evaluate(({BrowserWindow},size)=>BrowserWindow.getAllWindows()[0].setSize(...size),[width,height])
       await page.waitForTimeout(120)
-      const dimensions = await page.evaluate(()=>{
-        const bounds=document.getElementById('preview-viewport').getBoundingClientRect(),wrap=document.querySelector('.preview-wrap').getBoundingClientRect(),frame=document.getElementById('mas-preview-frame').getBoundingClientRect()
-        return{width:innerWidth,scrollWidth:document.documentElement.scrollWidth,bounds:{width:bounds.width,height:bounds.height,left:bounds.left,right:bounds.right,top:bounds.top,bottom:bounds.bottom},wrap:{left:wrap.left,right:wrap.right,top:wrap.top,bottom:wrap.bottom},frame:{width:frame.width,height:frame.height}}
-      })
-      assert(dimensions.scrollWidth<=dimensions.width)
-      assert(Math.abs(dimensions.bounds.width/dimensions.bounds.height-1.6)<.01,JSON.stringify(dimensions))
-      assert(dimensions.bounds.left>=dimensions.wrap.left-1&&dimensions.bounds.right<=dimensions.wrap.right+1,JSON.stringify(dimensions))
-      assert(dimensions.bounds.top>=dimensions.wrap.top-1&&dimensions.bounds.bottom<=dimensions.wrap.bottom+1,JSON.stringify(dimensions))
-      assert(Math.abs(dimensions.frame.width-dimensions.bounds.width)<1)
+      await verifyDock()
     }
     await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].maximize())
     await page.waitForTimeout(150)
-    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
+    await verifyDock()
     await page.screenshot({path:path.join(qa,packaged?'mas-portable-maximized.png':'mas-maximized.png')})
     await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].unmaximize())
+    await page.waitForTimeout(150)
+    await verifyDock()
+    for (const full of [true, false]) {
+      await application.evaluate(async ({BrowserWindow}, full) => {
+        const window = BrowserWindow.getAllWindows()[0]
+        await new Promise(resolve => { window.once(full ? 'enter-full-screen' : 'leave-full-screen', resolve); window.setFullScreen(full) })
+      }, full)
+      await page.waitForTimeout(150)
+      await verifyDock()
+      if (full) await page.screenshot({path:path.join(qa,packaged?'mas-portable-fullscreen.png':'mas-fullscreen.png')})
+    }
     await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1440,940))
-    ok('5 组窗口尺寸、最大化和还原：预览等比缩放，无横向溢出或裁切')
+    ok('7 组尺寸、单独宽高变化、最大化、全屏和还原：预览四边始终铺满可用区域')
     await page.locator('[data-tab="info"]').click()
     await page.screenshot({path:path.join(qa,packaged?'mas-portable-default.png':'mas-default.png')})
     const theme=process.env.THEME_FIXTURE || path.join(root,'示例主题-林间来信.zip')
@@ -64,6 +95,7 @@ async function verify() {
     assert(bg.startsWith('url("blob:'))
     assert.equal(await frame.locator('.mas-app canvas#preview-mascot').count(),0)
     assert.equal(await page.locator('#desktop-mascot-preview').isVisible(),true)
+    await verifyDock()
     await page.locator('[data-tab="assets"]').click()
     const newWindow=application.waitForEvent('window')
     await page.locator('#preview-current-mascot').click()

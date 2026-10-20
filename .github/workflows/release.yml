@@ -63,7 +63,7 @@ jobs:
         run: |
           $releaseArgs = @(
             'release', 'create', $env:RELEASE_TAG,
-            'release/MAS创作工具箱-便携版.zip', 'release/SHA256SUMS.txt',
+            ('release/MAS-Theme-Studio-{0}-Windows-x64.zip' -f $env:RELEASE_TAG), 'release/SHA256SUMS.txt',
             '--repo', $env:GITHUB_REPOSITORY,
             '--verify-tag', '--title', "MAS 创作工具箱 $env:RELEASE_TAG",
             '--notes-file', '.github/RELEASE_NOTES.md', '--generate-notes'

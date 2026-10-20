@@ -13,8 +13,9 @@ console.log(`Verified release version ${tag}`)
 
 if (process.argv[3]) {
   const directory = path.resolve(process.argv[3])
-  const name = 'MAS创作工具箱-便携版.zip'
+  const name = `MAS-Theme-Studio-${tag}-Windows-x64.zip`
   const archive = path.join(directory, name)
+  fs.copyFileSync(path.join(directory, 'MAS创作工具箱-便携版.zip'), archive)
   if (!fs.statSync(archive).size) throw new Error('Portable ZIP is empty')
   const checksum = createHash('sha256').update(fs.readFileSync(archive)).digest('hex')
   fs.writeFileSync(path.join(directory, 'SHA256SUMS.txt'), `${checksum}  ${name}\n`, 'utf8')
