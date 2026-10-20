@@ -185,6 +185,7 @@
       $(`color-${key}`).value = value; $(`text-${key}`).value = value
       $(`color-${key}`).closest('.color-row').classList.toggle('auto-token', m.tokens[key] === undefined)
     }
+    renderPageTitleColor()
     $('radius').value = tokens.borderRadius ?? 6
     $('radius-value').textContent = `${tokens.borderRadius ?? 6} px`
     $('bg-size').value = m.background?.size || 'cover'; $('bg-position').value = m.background?.position || 'right bottom'
@@ -195,6 +196,13 @@
     $('mascot-width').value = m.mascot?.width ?? 192
     $('mascot-position').value = m.mascot?.position ?? 'bottom-right'
     renderSlots(); renderPreview(); renderSummary(); window.themeAI.render()
+  }
+  function renderPageTitleColor() {
+    const color = state.manifest.tokens.colorPageTitle
+    $('page-title-enabled').checked = color !== undefined
+    $('page-title-fields').hidden = color === undefined
+    const value = color ?? hexValue(effectiveTokens().colorText, effectiveTokens().colorBgContainer)
+    $('color-page-title').value = value; $('text-page-title').value = value
   }
   function renderSummary() {
     $('summary-name').textContent = state.manifest.name || '未命名主题'
@@ -359,12 +367,29 @@
       }
       wrap.append(picker, text); row.append(wrap); $('color-fields').append(row)
     }
+    $('page-title-enabled').onchange = () => {
+      if ($('page-title-enabled').checked) state.manifest.tokens.colorPageTitle = $('color-page-title').value
+      else delete state.manifest.tokens.colorPageTitle
+      renderPageTitleColor(); markChanged()
+    }
+    $('color-page-title').oninput = () => {
+      state.manifest.tokens.colorPageTitle = $('color-page-title').value
+      $('text-page-title').value = $('color-page-title').value; markChanged()
+    }
+    $('text-page-title').onchange = () => {
+      if (!/^#[0-9a-f]{6}$/i.test($('text-page-title').value)) {
+        renderPageTitleColor(); toast('颜色请填写 # 加六位十六进制数字，例如 #1677ff', true); return
+      }
+      state.manifest.tokens.colorPageTitle = $('text-page-title').value.toLowerCase()
+      renderPageTitleColor(); markChanged()
+    }
+    $('preview-page-title').onclick = () => window.themePreview.showPage('/plans')
     palettes.forEach(palette => {
       const button = document.createElement('button'); button.className = 'palette'; button.title = palette.name; button.setAttribute('aria-label', `${palette.name}配色`)
       palette.colors.forEach(color => { const swatch = document.createElement('i'); swatch.style.background = color; button.append(swatch) })
       button.onclick = () => {
         const mode = state.manifest.mode
-        state.manifest.tokens = { colorPrimary: palette.colors[0], ...(state.manifest.tokens.borderRadius === undefined ? {} : { borderRadius: state.manifest.tokens.borderRadius }) }
+        state.manifest.tokens = { colorPrimary: palette.colors[0], ...(state.manifest.tokens.colorPageTitle === undefined ? {} : { colorPageTitle: state.manifest.tokens.colorPageTitle }), ...(state.manifest.tokens.borderRadius === undefined ? {} : { borderRadius: state.manifest.tokens.borderRadius }) }
         if (mode === 'light' && palette.name !== 'MAS 默认') state.manifest.tokens.colorBgLayout = palette.colors[2]
         renderForm(); markChanged()
       }

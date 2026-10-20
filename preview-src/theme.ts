@@ -3,11 +3,14 @@ import { theme } from 'ant-design-vue'
 import formatToken from 'ant-design-vue/es/theme/util/alias'
 export const current = shallowRef<any>({ manifest: { mode: 'light', tokens: { colorPrimary: '#1677ff' } }, assets: {} })
 export const findAsset = (name?: string) => name ? current.value.assets[name] || current.value.assets[Object.keys(current.value.assets).find(key => key.toLowerCase() === name.toLowerCase()) || ''] : ''
-export const config = (manifest: any) => ({
-  algorithm: manifest.mode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
-  token: { colorPrimary: '#1677ff', ...manifest.tokens },
-  components: { InputNumber: { handleVisible: true as const } },
-})
+export const config = (manifest: any) => {
+  const tokens = Object.fromEntries(Object.entries(manifest.tokens).filter(([key, value]) => key !== 'colorPageTitle' && value !== undefined))
+  return {
+    algorithm: manifest.mode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
+    token: { colorPrimary: '#1677ff', ...tokens },
+    components: { InputNumber: { handleVisible: true as const } },
+  }
+}
 export const resolveTokens = (manifest: any) => {
   const options = config(manifest)
   const derived = options.algorithm({ ...theme.defaultSeed, ...options.token })

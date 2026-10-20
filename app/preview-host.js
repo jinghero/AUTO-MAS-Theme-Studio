@@ -14,10 +14,12 @@
     new ResizeObserver(resize).observe(document.querySelector('.preview-wrap'))
     frame().addEventListener('load', () => { if (current) render(current); resize() })
     window.addEventListener('message', event => {
+      if (event.source === frame().contentWindow && event.data?.type === 'mas-preview-page') page = event.data.page
       if (event.source === frame().contentWindow && event.data?.type === 'mas-preview-ready' && current) render(current)
     })
     resize()
   }
   function toggle() { page = page === '/home' ? '/plans' : '/home'; if (current) render(current) }
-  window.themePreview = { init, render, toggle, resize }
+  function showPage(value) { page = value; if (current) render(current) }
+  window.themePreview = { init, render, toggle, resize, showPage }
 })()

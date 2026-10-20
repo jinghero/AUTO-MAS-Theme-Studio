@@ -19,6 +19,8 @@ function syncVariables() {
   applyBackground(root.style, manifest.background ? findAsset(manifest.background.path) : undefined)
   root.classList.toggle('dark', manifest.mode === 'dark')
   root.classList.toggle('appearance-background-custom', !!manifest.background)
+  if (manifest.tokens.colorPageTitle) root.style.setProperty('--app-page-title-color', manifest.tokens.colorPageTitle)
+  else root.style.removeProperty('--app-page-title-color')
   for (const [key,value] of Object.entries(tokens)) if (key.startsWith('color') && typeof value === 'string') {
     root.style.setProperty(`--ant-${key.replace(/[A-Z]/g, value=>'-'+value.toLowerCase())}`, value)
   }
@@ -48,6 +50,7 @@ if (document.getElementById('app') && location.pathname.endsWith('/mas-preview/i
   const app = createApp(Root)
   app.use(Antd).use(router).use(createI18n({ legacy:false,locale:'zh-CN',messages:{'zh-CN':messages} }))
   router.push('/home').then(()=>app.mount('#app'))
+  watch(() => router.currentRoute.value.path, page => parent.postMessage({ type:'mas-preview-page', page }, '*'))
   window.addEventListener('message', event => {
     if (event.source !== parent || event.data?.type !== 'mas-theme-preview') return
     current.value = event.data.state
