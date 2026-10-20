@@ -1,0 +1,8 @@
+node_modules/
+.build/
+dist/
+qa/
+data/
+src/compat/
+src/types/mascotPack.d.ts
+preview-src/source-reference/

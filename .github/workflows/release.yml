@@ -22,10 +22,15 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
       - name: Match tag to package versions
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: node release.cjs "$RELEASE_TAG"
+        run: node --experimental-strip-types release.cts "$RELEASE_TAG"
 
   build:
     name: Build release
@@ -53,8 +58,13 @@ jobs:
           name: MAS-Theme-Studio-Windows-x64
           path: release
 
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
       - name: Create SHA-256 checksum
-        run: node release.cjs "$RELEASE_TAG" release
+        run: node --experimental-strip-types release.cts "$RELEASE_TAG" release
 
       - name: Publish GitHub Release
         env:

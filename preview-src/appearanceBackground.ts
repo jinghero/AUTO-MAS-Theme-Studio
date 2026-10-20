@@ -36,8 +36,8 @@ type BackgroundApplierOptions = {
  * 写完读回核对，没生效就清成 none 且不记账，下次照样重写，不会留着上一个包的图。
  */
 export function createAppearanceBackgroundApplier(options: BackgroundApplierOptions = {}) {
-  const createObjectURL = options.createObjectURL ?? (blob => URL.createObjectURL(blob))
-  const revokeObjectURL = options.revokeObjectURL ?? (url => URL.revokeObjectURL(url))
+  const createObjectURL = options.createObjectURL ?? ((blob) => URL.createObjectURL(blob))
+  const revokeObjectURL = options.revokeObjectURL ?? ((url) => URL.revokeObjectURL(url))
   // null 表示还没写过（或上次没写成），首次必须落一次。
   let applied: { source: string | undefined; objectUrl?: string } | null = null
 
@@ -71,7 +71,7 @@ export function createAppearanceBackgroundApplier(options: BackgroundApplierOpti
         // 解码或分配内存失败（图太大时可能抛 RangeError）
         clear(
           style,
-          `外观背景转成 blob: URL 失败，已清除背景：${error instanceof Error ? error.message : String(error)}`
+          `外观背景转成 blob: URL 失败，已清除背景：${error instanceof Error ? error.message : String(error)}`,
         )
         return
       }

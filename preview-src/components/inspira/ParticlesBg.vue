@@ -44,7 +44,7 @@ const props = withDefaults(
     quantity: 100,
     staticity: 50,
     ease: 50,
-  }
+  },
 )
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -82,7 +82,7 @@ function parseHexColor(color: string): ParticleColor {
     normalized.length === 3
       ? normalized
           .split('')
-          .map(value => `${value}${value}`)
+          .map((value) => `${value}${value}`)
           .join('')
       : normalized
 
@@ -128,7 +128,7 @@ function drawParticles() {
       particle.y + particle.translateY,
       particle.size,
       0,
-      Math.PI * 2
+      Math.PI * 2,
     )
     canvasContext.fillStyle = `rgba(${particleColor.red}, ${particleColor.green}, ${particleColor.blue}, ${particle.alpha})`
     canvasContext.fill()
@@ -346,7 +346,7 @@ watch(
         resizeCanvas()
       }
     }
-  }
+  },
 )
 
 watch(() => performanceStore.isLowPower, handlePerformanceChange)

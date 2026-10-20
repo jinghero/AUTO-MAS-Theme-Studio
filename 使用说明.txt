@@ -80,7 +80,7 @@ API Key 只在本次运行内使用，不写入草稿、主题 ZIP 或日志。
 API 地址、模型、提示词及最后一次生成结果（单张或整套图标）会随草稿保存在本机。
 生成时向所填地址发送提示词、授权密钥和明确选择的参考图，不自动上传主题中的其他素材。
 若接口以图片链接返回，下载图片不会附带 API Key。
-内置提示词与请求代码可在 source.zip 中 app/ai.js、app/image-api.cjs 查看。
+内置提示词与请求代码可在 source.zip 中 src/ai.ts、src/image-api.cts 查看。
 官方接口参考：https://developers.openai.com/api/reference/resources/images/methods/generate
 
 继续编辑

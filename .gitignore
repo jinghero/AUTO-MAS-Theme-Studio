@@ -2,6 +2,7 @@ data/
 dist/
 qa/
 node_modules/
+.build/
 *.log
 .env
 .env.*
