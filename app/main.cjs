@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
@@ -6,6 +6,7 @@ const { readPackage, buildPackage, buildMascotPackage, decodeImage } = require('
 const { generateImage, imageURL } = require('./image-api.cjs')
 const { describeReferences } = require('./prompt-api.cjs')
 const { loadBytes } = require('./mascot-tool/package-loader.cjs')
+const { createImageLibrary } = require('./image-library.cjs')
 
 app.setName('MAS 主题工坊')
 const portableData = path.join(app.isPackaged ? path.dirname(app.getPath('exe')) : path.dirname(__dirname), 'data')
@@ -15,6 +16,7 @@ catch { dataPath = app.getPath('userData'); fs.mkdirSync(dataPath, { recursive: 
 app.setPath('userData', dataPath)
 app.setPath('sessionData', path.join(dataPath, 'session'))
 const draftPath = path.join(dataPath, 'draft.json')
+const imageLibrary = createImageLibrary(path.join(dataPath, 'generated-images'))
 app.disableHardwareAcceleration()
 let window, readyToClose = false
 let generationController
@@ -37,6 +39,15 @@ function imageInfo(url) {
   return { bytes: data.length }
 }
 handler('studio:image', input => ({ info: imageInfo(input.url) }))
+handler('studio:library-save', input => imageLibrary.save(input))
+handler('studio:library-list', input => imageLibrary.list(input))
+handler('studio:library-read', input => imageLibrary.read(input?.id))
+handler('studio:library-folder', async () => {
+  fs.mkdirSync(imageLibrary.directory, {recursive:true})
+  const error = await shell.openPath(imageLibrary.directory)
+  if (error) throw new Error(error)
+  return {}
+})
 handler('studio:generate', async input => {
   if (generationController || descriptionController) throw new Error('已有 AI 请求正在进行，请等待或取消后重试')
   const controller = new AbortController()

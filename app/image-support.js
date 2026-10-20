@@ -1,5 +1,12 @@
 // 使用 Chromium 解码，与主题实际显示时保持一致，兼容 PNG / JPEG / WebP。
 window.themeImages = {
+  async fit(url, max) {
+    const image = new Image(); image.src = url; await image.decode()
+    const ratio = Math.min(1, max / image.naturalWidth, max / image.naturalHeight)
+    const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio)); canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio))
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/png')
+  },
   async inspect(url, name = '所选图片') {
     const checked = await window.studio.image({ url })
     if (!checked.success) throw new Error(`${name}：${checked.error}`)

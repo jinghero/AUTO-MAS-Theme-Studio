@@ -14,10 +14,7 @@
     { name: '陶土', colors: ['#b07860', '#e9d5c4', '#f9f2eb'] },
     { name: '玫瑰', colors: ['#b16f88', '#ebcdd9', '#fbf0f4'] },
   ]
-  const icons = { default: ['默认图标', '✦'], home: ['主页', '⌂'], scripts: ['脚本', '▧'], plans: ['计划', '▦'],
-    emulators: ['模拟器', '▣'], queue: ['队列', '☷'], scheduler: ['调度中心', '◷'], gameSign: ['社区签到', '✓'],
-    history: ['历史记录', '◴'], tools: ['工具箱', '◇'], themeStore: ['主题商店', '◈'], settings: ['设置', '⚙'],
-    testRouter: ['测试路由', '◇'], ocrDev: ['OCR 开发', '◇'], overlayMaskDev: ['遮罩开发', '◇'], updateDownloadDev: ['下载开发', '◇'] }
+  const icons = window.themeIconSet
   let state, currentTab = 'info', currentSlot = 'background', busy = false, saveTimer, toastTimer
   let draftQueue = Promise.resolve(), draftRevision = 0, imageRevision = 0, frame = 0, lastFrame = 0
   let sprite = null, staticMascot = null, displayedMascotSource = ''
@@ -289,6 +286,27 @@
     else { m.cursors ||= {}; m.cursors[key] = { path: name, hotspotX: 0, hotspotY: 0 } }
     renderForm(); markChanged(); toast(`图片已导入 · ${info.width} × ${info.height}`)
   }
+  async function importIcons(entries) {
+    if (!Array.isArray(entries) || !entries.length || entries.length > icons.length) throw new Error('请先选择要应用的图标')
+    const owner = state, originalManifest = JSON.stringify(state.manifest), candidate = structuredClone(state), keys = new Set()
+    candidate.manifest.menuIcons ||= {}
+    for (const {key, url} of entries) {
+      if (!icons.some(icon => icon.key === key) || keys.has(key)) throw new Error('菜单图标用途无效或重复')
+      keys.add(key)
+      const info = await window.themeImages.inspect(url, '生成的菜单图标')
+      if (!url.startsWith('data:image/png;') || info.width > 128 || info.height > 128) throw new Error('生成的菜单图标需为 128 像素以内的 PNG')
+      const name = `assets/ai-menu-${key}-${crypto.randomUUID().slice(0,8)}.png`
+      candidate.assets[name] = url; candidate.manifest.menuIcons[key] = name
+    }
+    const used = new Set(refPaths(candidate.manifest).map(name => name.toLowerCase()))
+    for (const name of Object.keys(candidate.assets)) if (!used.has(name.toLowerCase())) delete candidate.assets[name]
+    const checked = await window.studio.validate(candidate)
+    if (!checked.success) throw new Error(checked.error)
+    if (state !== owner) throw new Error('主题已改变，请在当前主题重新应用图标')
+    if (JSON.stringify(state.manifest) !== originalManifest) throw new Error('主题素材已改变，请重新应用图标')
+    state.assets = candidate.assets; state.manifest.menuIcons = candidate.manifest.menuIcons
+    renderForm(); markChanged(); toast(`已应用 ${entries.length} 个菜单图标`)
+  }
   async function importZip(file, kind) {
     if (!file) return
     if (file.size > 16 * 1024 * 1024) throw new Error('ZIP 不能超过 16 MB')
@@ -352,8 +370,8 @@
       }
       $('palettes').append(button)
     })
-    for (const [key, [name]] of Object.entries(icons)) {
-      const option = document.createElement('option'); option.value = key; option.textContent = name; $('icon-key').append(option)
+    for (const {key, label} of icons) {
+      const option = document.createElement('option'); option.value = key; option.textContent = label; $('icon-key').append(option)
     }
     document.querySelectorAll('.step').forEach(button => { button.onclick = () => selectTab(button.dataset.tab) })
     document.querySelectorAll('.next').forEach(button => { button.onclick = () => selectTab(button.dataset.next) })
@@ -433,12 +451,13 @@
   async function init() {
     state = newState(); bind()
     window.themePreview.init()
-    window.themeAI.init({ getState: () => state, changed: markChanged, toast, importImage, selectTab })
+    window.themeAI.init({ getState: () => state, changed: markChanged, toast, importImage, importIcons, selectTab })
     const result = await window.studio.loadDraft()
     if (result.success && result.state?.manifest && result.state.assets && ['light', 'dark'].includes(result.state.manifest.mode) && result.state.manifest.tokens) {
       state = result.state; $('draft-status').textContent = '已恢复上次草稿 · 仅保存在本机'
     } else if (!result.success) toast(`草稿读取失败：${result.error}`, true)
     renderForm(); requestAnimationFrame(animationLoop)
+    await window.themeAI.restoreLibrary()
   }
   init().catch(error => toast(`启动失败：${error.message}`, true))
 })()
