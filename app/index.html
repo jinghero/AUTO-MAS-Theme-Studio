@@ -52,17 +52,24 @@
       <section class="tab-panel" id="tab-ai" hidden>
         <div class="panel-heading"><span class="eyebrow">03 / AI 生图</span><h2>把灵感变成素材</h2><p>填写兼容接口，内置提示词可以直接使用。</p></div>
         <details id="ai-settings" class="ai-settings" open><summary>生图服务设置</summary>
-          <label class="field">API 地址<input id="ai-base-url" type="url" placeholder="https://api.openai.com/v1" spellcheck="false"><small>支持基础地址或完整 /images/generations 地址</small></label>
+          <label class="field">API 地址<input id="ai-base-url" type="url" placeholder="https://api.openai.com/v1" spellcheck="false"><small>支持基础地址或完整 /images/generations、/images/edits 地址</small></label>
           <label class="field">API Key<div class="key-field"><input id="ai-key" type="password" placeholder="填写你的 API Key" autocomplete="off" spellcheck="false"><button id="ai-key-toggle" type="button" title="显示或隐藏密钥">显示</button></div><small>仅本次运行使用，不写入草稿和主题包</small></label>
           <label class="field">生图模型<input id="ai-model" placeholder="填写服务商提供的模型名" spellcheck="false"><small>默认 gpt-image-2，可改为服务商提供的兼容模型</small></label>
         </details>
         <label class="field">生成用途<select id="ai-target"><option value="background">主题背景</option><option value="cover">主题封面</option><option value="icon">菜单图标</option><option value="mascot">静态桌宠</option><option value="cursor">鼠标光标</option></select></label>
+        <section class="ai-references" aria-label="参考图">
+          <div class="prompt-heading"><span>参考图（可选）</span><span id="ai-reference-count">0 / 4</span></div>
+          <div id="ai-reference-list" class="ai-reference-list"></div>
+          <button id="ai-reference-add" class="button secondary full" type="button">＋ 添加参考图</button>
+          <input id="ai-reference-file" type="file" accept=".png,.jpg,.jpeg,.webp" multiple hidden>
+          <p class="hint">最多 4 张，单张 8 MB、合计 16 MB。仅本次使用，不写入草稿或主题包；生成时上传到所填服务商。服务商需支持参考图生成。</p>
+        </section>
         <label class="field">灵感与风格<input id="ai-style" maxlength="800" placeholder="例如：森林、奶油绿、柔和手绘"><small>用于套用内置提示词；你也可以直接编辑下方提示词</small></label>
         <div class="prompt-heading"><label for="ai-prompt">提示词</label><button id="ai-reset-prompt" class="text-button">套用内置提示词 ↻</button></div>
         <textarea id="ai-prompt" rows="10" maxlength="16000" spellcheck="false"></textarea>
         <label class="field ai-size-field">生成尺寸<input id="ai-size" list="ai-sizes" placeholder="1536x1024" spellcheck="false"><datalist id="ai-sizes"><option value="1536x1024"><option value="1024x1024"><option value="1024x1536"><option value="auto"></datalist></label>
         <details class="ai-advanced"><summary>高级选项（按服务商支持情况设置）</summary><label class="field">生成质量<select id="ai-quality"><option value="">使用服务商默认值</option><option value="auto">auto</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="standard">standard（兼容服务）</option><option value="hd">hd（兼容服务）</option></select></label><label class="field">返回格式<select id="ai-response-format"><option value="">自动（不额外传参数）</option><option value="b64_json">b64_json（兼容服务）</option><option value="url">url（兼容服务）</option></select></label><label class="checkbox-field"><input id="ai-transparent" type="checkbox">请求透明背景（接口需支持）</label></details>
-        <div class="tip ai-tip"><span>✦</span><p>每次生成 1 张图片，由你的服务商计费。点击生成时会把提示词发送到所填 API 地址。</p></div>
+        <div class="tip ai-tip"><span>✦</span><p>每次生成 1 张图片，由你的服务商计费。点击生成时会把提示词和已选参考图发送到所填 API 地址。</p></div>
         <div class="ai-actions"><button id="ai-generate" class="button primary full">✦ 生成图片</button><button id="ai-cancel" class="button secondary" hidden>取消</button></div>
         <p id="ai-status" class="validation" role="status"></p>
       </section>

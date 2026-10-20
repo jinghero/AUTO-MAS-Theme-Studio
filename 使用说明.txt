@@ -29,6 +29,9 @@ AI 生图
 默认地址：https://api.openai.com/v1
 默认模型名：gpt-image-2；可改为你所用服务商提供的生图模型。
 兼容 POST /images/generations，支持基础地址或完整接口地址。
+可选最多 4 张参考图（PNG/JPEG/WebP，单张 8 MB、总计 16 MB），并在提示词中说明参考人物、配色或风格。
+添加参考图后自动使用 /images/edits 文件上传接口，服务商及模型需支持参考图生成。
+参考图可以预览和移除，仅本次运行使用，不写入草稿或主题包；生成时随提示词上传到所填服务商。
 API 地址通常以 /v1 结尾；支持 HTTPS，localhost 本机服务可用 HTTP。
 这不是 ChatGPT 网页登录，不会使用 Codex 的订阅额度；由所填 API 服务商计费。
 

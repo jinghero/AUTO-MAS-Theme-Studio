@@ -71,6 +71,8 @@ npm test
 
 在「AI 生图」中填写 OpenAI Images API 兼容地址、模型名和 API Key。默认地址为 `https://api.openai.com/v1`，默认模型名为 `gpt-image-2`，可修改为服务商提供的名称。
 
+「参考图」可添加最多 4 张 PNG、JPEG 或 WebP，单张不超过 8 MB、合计不超过 16 MB。可预览、单独移除，并在提示词里说明参考哪张图的人物、配色或风格。生成时通过标准 `multipart/form-data` 上传到 `/images/edits`，服务商和模型需支持该接口；不选参考图时使用 `/images/generations`。完整接口地址会按是否选择参考图自动切换。参考图仅本次运行使用，不写入草稿或导出的主题包。
+
 支持 `data[0].b64_json` 或 `data[0].url` 返回格式；不支持仅提供聊天接口或异步任务轮询接口的服务。生图按所填服务商的规则计费。密钥仅本次运行使用，不写入草稿、主题包或日志。本地素材导入和导出可离线进行。
 
 本项目采用 AGPL-3.0，参见 [LICENSE](LICENSE)。上游代码、依赖及素材说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。本项目是独立工具，并非 AUTO-MAS 官方发布物。

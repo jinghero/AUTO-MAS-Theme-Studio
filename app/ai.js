@@ -12,6 +12,7 @@
   const defaults = { baseURL: 'https://api.openai.com/v1', model: 'gpt-image-2', target: 'background',
     style: '清新森林、鼠尾草绿与奶油白、柔和手绘、安静温暖', size: '1536x1024', quality: '', responseFormat: '', transparent: false }
   let hooks, generating = false, timer, started = 0
+  let referenceImages = [], referenceOwner, loadingReferences = false
   function settings() {
     const state = hooks.getState()
     state.generator ||= { ...defaults }
@@ -19,7 +20,55 @@
   }
   function presetPrompt() {
     const config = settings(), theme = hooks.getState().manifest
-    return `${templates[config.target] || templates.background}\n\n统一风格：${config.style || defaults.style}。\n配色以 ${theme.tokens.colorPrimary} 为主色，与主题「${theme.name || '我的主题'}」保持一致。\n素材将用于 AUTO-MAS 的${targets[config.target]}；请直接输出可用图片。`
+    return `${templates[config.target] || templates.background}\n\n统一风格：${config.style || defaults.style}。\n配色以 ${theme.tokens.colorPrimary} 为主色，与主题「${theme.name || '我的主题'}」保持一致。\n如有参考图，请参考其中的主体特征和视觉风格，按照本次用途重新构图。\n素材将用于 AUTO-MAS 的${targets[config.target]}；请直接输出可用图片。`
+  }
+  function renderReferences() {
+    if (referenceOwner !== hooks.getState()) { referenceOwner = hooks.getState(); referenceImages = [] }
+    const list = $('ai-reference-list')
+    list.replaceChildren()
+    $('ai-reference-count').textContent = `${referenceImages.length} / 4`
+    referenceImages.forEach((reference, index) => {
+      const item = document.createElement('div'); item.className = 'ai-reference-item'
+      const image = document.createElement('img'); image.src = reference.url; image.alt = `参考图 ${index + 1}`
+      const detail = document.createElement('div')
+      const name = document.createElement('strong'); name.textContent = `${index + 1}. ${reference.name}`; name.title = reference.name
+      const size = document.createElement('small'); size.textContent = `${reference.width} × ${reference.height} · ${Math.ceil(reference.bytes / 1024)} KB`
+      detail.append(name, size)
+      const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '移除'
+      remove.setAttribute('aria-label', `移除参考图 ${index + 1}`); remove.disabled = generating || loadingReferences
+      remove.onclick = () => { referenceImages.splice(index, 1); renderReferences() }
+      item.append(image, detail, remove); list.append(item)
+    })
+    $('ai-reference-add').disabled = generating || loadingReferences || referenceImages.length >= 4
+    $('ai-reference-add').textContent = loadingReferences ? '正在读取参考图…' : '＋ 添加参考图'
+    $('ai-generate').disabled = generating || loadingReferences
+    if (!generating) $('ai-generate').textContent = referenceImages.length ? '✦ 参考图生成' : '✦ 生成图片'
+  }
+  async function addReferences(files) {
+    if (!files.length || generating || loadingReferences) return
+    renderReferences()
+    const owner = hooks.getState()
+    loadingReferences = true; renderReferences()
+    try {
+      if (referenceImages.length + files.length > 4) throw new Error('参考图最多 4 张，请先移除已有参考图')
+      const total = referenceImages.reduce((sum, item) => sum + item.bytes, 0) + files.reduce((sum, file) => sum + file.size, 0)
+      if (total > 16 * 1024 * 1024) throw new Error('参考图总大小不能超过 16 MB')
+      const added = []
+      for (const file of files) {
+        if (file.size > 8 * 1024 * 1024) throw new Error('单张参考图不能超过 8 MB')
+        const match = /\.(png|jpe?g|webp)$/i.exec(file.name)
+        if (!match) throw new Error('参考图只支持 PNG、JPEG 或 WebP')
+        const mime = match[1].toLowerCase() === 'png' ? 'image/png' : match[1].toLowerCase() === 'webp' ? 'image/webp' : 'image/jpeg'
+        const bytes = await file.arrayBuffer()
+        const url = await new Promise((resolve, reject) => {
+          const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error('参考图读取失败'))
+          reader.readAsDataURL(new Blob([bytes], { type: mime }))
+        })
+        added.push({ name: file.name, url, ...await window.themeImages.inspect(url, file.name) })
+      }
+      if (owner === hooks.getState()) referenceImages.push(...added)
+    } catch (error) { hooks.toast(error.message, true) }
+    finally { loadingReferences = false; $('ai-reference-file').value = ''; renderReferences() }
   }
   function renderResult() {
     const result = hooks.getState().aiResult
@@ -41,6 +90,7 @@
     if (!config.prompt) config.prompt = presetPrompt()
     $('ai-prompt').value = config.prompt
     $('ai-transparent').checked = config.transparent === true
+    renderReferences()
     renderResult()
   }
   function selectTab(tab) {
@@ -54,19 +104,22 @@
     if (selected) { render(); $('ai-status').textContent ||= '准备就绪，填写 API Key 后即可生成。' }
   }
   async function generate() {
-    if (generating) return
+    if (generating || loadingReferences) return
     const apiKey = $('ai-key').value.trim()
     if (!apiKey) { $('ai-key').focus(); hooks.toast('请在工具里填写 API Key', true); return }
     const config = structuredClone(settings())
+    renderReferences()
+    const references = referenceImages.map(({ url }) => ({ url }))
     if (!config.prompt?.trim()) { hooks.toast('请填写提示词，或点击「套用内置提示词」', true); return }
     generating = true; started = Date.now()
+    renderReferences()
     $('ai-generate').disabled = true; $('ai-generate').textContent = '正在生成…'; $('ai-cancel').hidden = false
     $('ai-result-panel').classList.add('generating')
     $('ai-status').className = 'validation'
-    const update = () => { $('ai-status').textContent = `正在等待 ${config.model} · ${Math.floor((Date.now() - started) / 1000)} 秒；生成期间可以继续编辑。` }
+    const update = () => { $('ai-status').textContent = `正在等待 ${config.model}${references.length ? ` · ${references.length} 张参考图` : ''} · ${Math.floor((Date.now() - started) / 1000)} 秒；生成期间可以继续编辑。` }
     update(); timer = setInterval(update, 1000)
     try {
-      const response = await window.studio.generate({ ...config, apiKey })
+      const response = await window.studio.generate({ ...config, apiKey, referenceImages: references })
       if (!response.success) throw new Error(response.error)
       const info = await window.themeImages.inspect(response.image.url, '生成的图片')
       hooks.getState().aiResult = { ...response.image, ...info, target: config.target }
@@ -80,6 +133,7 @@
       clearInterval(timer); generating = false; $('ai-generate').disabled = false
       $('ai-generate').textContent = '✦ 生成图片'; $('ai-cancel').hidden = true
       $('ai-result-panel').classList.remove('generating')
+      renderReferences()
     }
   }
   async function apply() {
@@ -107,6 +161,8 @@
   }
   function init(options) {
     hooks = options
+    $('ai-reference-add').onclick = () => $('ai-reference-file').click()
+    $('ai-reference-file').onchange = () => addReferences(Array.from($('ai-reference-file').files))
     for (const id of ['ai-icon-key']) for (const option of $('icon-key').options) $(id).append(option.cloneNode(true))
     for (const [id, key] of [['ai-base-url', 'baseURL'], ['ai-model', 'model'], ['ai-style', 'style'], ['ai-prompt', 'prompt'], ['ai-size', 'size']]) $(id).oninput = () => { settings()[key] = $(id).value; hooks.changed() }
     for (const [id, key] of [['ai-quality', 'quality'], ['ai-response-format', 'responseFormat']]) $(id).onchange = () => { settings()[key] = $(id).value; hooks.changed() }

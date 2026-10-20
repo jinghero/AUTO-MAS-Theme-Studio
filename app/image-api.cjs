@@ -1,12 +1,15 @@
 // OpenAI Images API 兼容请求；密钥只存在于这次请求的内存中。
 const MAX_IMAGE = 8 * 1024 * 1024
 const MAX_RESPONSE = 14 * 1024 * 1024
-function endpointAddress(value) {
+function endpointAddress(value, editing = false) {
   let url
   try { url = new URL(value) } catch { throw new Error('请填写完整的 API 地址，例如 https://api.openai.com/v1') }
   checkURL(url)
   const pathname = url.pathname.replace(/\/+$/, '')
-  if (!pathname.endsWith('/images/generations')) url.pathname = `${pathname || '/v1'}/images/generations`
+  const operation = editing ? 'edits' : 'generations'
+  url.pathname = /\/images\/(?:generations|edits)$/.test(pathname)
+    ? pathname.replace(/\/images\/(?:generations|edits)$/, `/images/${operation}`)
+    : `${pathname || '/v1'}/images/${operation}`
   return url.href
 }
 function checkURL(url) {
@@ -64,7 +67,9 @@ async function downloadImage(value, signal, fetcher) {
 async function generateImage(input, signal, fetcher = fetch) {
   const key = typeof input?.apiKey === 'string' ? input.apiKey.trim() : ''
   try {
-    const address = endpointAddress(input?.baseURL)
+    const references = input?.referenceImages ?? []
+    if (!Array.isArray(references) || references.length > 4) throw new Error('参考图最多 4 张')
+    const address = endpointAddress(input?.baseURL, references.length > 0)
     if (!key || key.length > 4096 || /[\r\n]/.test(key)) throw new Error('请填写有效的 API Key')
     const model = typeof input.model === 'string' ? input.model.trim() : ''
     const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
@@ -77,17 +82,35 @@ async function generateImage(input, signal, fetcher = fetch) {
     if (input.quality && ['low', 'medium', 'high', 'auto', 'standard', 'hd'].includes(input.quality)) payload.quality = input.quality
     if (input.responseFormat && ['b64_json', 'url'].includes(input.responseFormat)) payload.response_format = input.responseFormat
     if (input.transparent === true) { payload.background = 'transparent'; payload.output_format = 'png' }
+    let requestBody = JSON.stringify(payload)
+    const headers = { Authorization: `Bearer ${key}` }
+    if (references.length) {
+      requestBody = new FormData()
+      for (const [name, value] of Object.entries(payload)) requestBody.append(name, String(value))
+      let total = 0
+      for (const [index, reference] of references.entries()) {
+        const match = typeof reference?.url === 'string' && /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(reference.url)
+        if (!match || match[2].length > Math.ceil(MAX_IMAGE / 3) * 4) throw new Error('参考图需为 PNG、JPEG 或 WebP，单张不超过 8 MB')
+        const bytes = Buffer.from(match[2], 'base64'), info = imageURL(bytes)
+        if (info.mime !== `image/${match[1]}`) throw new Error('参考图内容与文件格式不一致')
+        total += bytes.length
+        if (total > 16 * 1024 * 1024) throw new Error('参考图总大小不能超过 16 MB')
+        const extension = match[1] === 'jpeg' ? 'jpg' : match[1]
+        requestBody.append(references.length === 1 ? 'image' : 'image[]', new Blob([bytes], { type: info.mime }), `reference-${index + 1}.${extension}`)
+      }
+    } else headers['Content-Type'] = 'application/json'
     const response = await fetcher(address, {
       method: 'POST', signal, redirect: 'error',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, body: JSON.stringify(payload),
+      headers, body: requestBody,
     })
     if (!response.ok) {
       const raw = await readLimited(response, 64 * 1024)
       let detail = ''
       try { const body = JSON.parse(raw.toString('utf8')); detail = body.error?.message || body.message || '' } catch {}
-      const common = { 400: '请求参数不被模型支持，请检查模型名、尺寸和高级选项', 401: 'API Key 无效或已过期',
+      const common = { 400: references.length ? '参考图或生成参数不被模型支持，请检查图片、模型名、尺寸和高级选项' : '请求参数不被模型支持，请检查模型名、尺寸和高级选项', 401: 'API Key 无效或已过期',
         403: '当前密钥无权使用这个生图模型', 404: '未找到接口或模型，请检查 API 地址和模型名',
         429: '服务商限流或额度不足，请稍后重试或检查账户额度' }
+      if (references.length && [404, 405, 415].includes(response.status)) common[response.status] = '参考图生成需要服务商支持 /images/edits 图像编辑接口，请检查 API 地址和模型名'
       throw new Error(`${common[response.status] || `服务商请求失败（${response.status}）`}${detail ? `：${detail}` : ''}`)
     }
     const raw = await readLimited(response, MAX_RESPONSE)

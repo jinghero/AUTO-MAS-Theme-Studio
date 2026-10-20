@@ -6,7 +6,7 @@ const { createRequire } = require('node:module')
 const dep = createRequire(path.join(__dirname, 'package.json'))
 const { _electron: electron } = dep('@playwright/test')
 const { readAppearancePackage } = require('./app/compat/appearanceService')
-const { endpointAddress } = require('./app/image-api.cjs')
+const { endpointAddress, generateImage } = require('./app/image-api.cjs')
 const root = __dirname, qa = path.join(root, 'qa')
 const packaged = process.argv.includes('--packaged')
 const executable = packaged ? path.join(root, 'dist/MAS创作工具箱/MAS主题工坊.exe') : dep('electron')
@@ -22,8 +22,18 @@ const server = http.createServer(async (request, response) => {
   }
   const chunks = []
   for await (const chunk of request) chunks.push(chunk)
-  const data = JSON.parse(Buffer.concat(chunks).toString())
-  requests.push({ path: request.url, headers: request.headers, data })
+  const raw = Buffer.concat(chunks), images = []
+  let data
+  if (request.headers['content-type']?.startsWith('multipart/form-data;')) {
+    const form = await new Request(address + request.url, { method:'POST', headers:request.headers, body:raw }).formData()
+    data = {}
+    for (const [name, value] of form) {
+      if (typeof value === 'string') data[name] = value
+      else images.push({ field:name, name:value.name, type:value.type, bytes:Buffer.from(await value.arrayBuffer()) })
+    }
+  } else data = JSON.parse(raw.toString())
+  requests.push({ path: request.url, headers: request.headers, data, images })
+  if (data.model === 'unsupported-reference') { response.writeHead(404, { 'Content-Type':'application/json' }); response.end('{}'); return }
   if (data.model === 'auth-error') { response.writeHead(401, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ error: { message: `Invalid key ${key}` } })); return }
   if (data.model === 'wait-model') { response.on('close', () => {}); return }
   if (data.model === 'invalid-image') { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ data: [{ b64_json: Buffer.from('invalid').toString('base64') }] })); return }
@@ -35,9 +45,27 @@ async function verify() {
   address = `http://127.0.0.1:${server.address().port}`
   assert.equal(endpointAddress('https://example.com/v1/'), 'https://example.com/v1/images/generations')
   assert.equal(endpointAddress('https://example.com/v2/images/generations'), 'https://example.com/v2/images/generations')
+  assert.equal(endpointAddress('https://example.com/v1/', true), 'https://example.com/v1/images/edits')
+  assert.equal(endpointAddress('https://example.com/v2/images/generations', true), 'https://example.com/v2/images/edits')
+  assert.equal(endpointAddress('https://example.com/v2/images/edits', true), 'https://example.com/v2/images/edits')
+  assert.equal(endpointAddress('https://example.com/v2/images/edits'), 'https://example.com/v2/images/generations')
   assert.throws(() => endpointAddress('http://remote.example/v1'))
   assert.throws(() => endpointAddress('https://username:password@example.com/v1'))
   ok('兼容基础地址、完整接口路径与地址约束')
+  const input = { baseURL:address + '/v1', apiKey:key, model:'fixture-model', prompt:'fixture prompt' }
+  let invalidCalls = 0
+  const noFetch = async () => { invalidCalls++; throw new Error('Invalid references must not reach network') }
+  for (const [referenceImages, message] of [
+    [{}, /最多 4 张/],
+    [Array(5).fill({url:'data:image/png;base64,YmFk'}), /最多 4 张/],
+    [[{url:'https://example.com/reference.png'}], /参考图需为/],
+    [[{url:'data:image/jpeg;base64,' + png.toString('base64')}], /格式不一致/],
+    [[{url:'data:image/png;base64,' + 'A'.repeat(Math.ceil(8 * 1024 * 1024 / 3) * 4 + 4)}], /单张不超过 8 MB/],
+  ]) await assert.rejects(generateImage({...input, referenceImages}, undefined, noFetch), message)
+  const large = Buffer.alloc(6 * 1024 * 1024); png.copy(large, 0, 0, 8)
+  await assert.rejects(generateImage({...input, referenceImages:Array(3).fill({url:'data:image/png;base64,' + large.toString('base64')})}, undefined, noFetch), /总大小不能超过 16 MB/)
+  assert.equal(invalidCalls, 0)
+  ok('参考图数量、格式、单张大小与总大小校验，非法输入不发送请求')
   const application = await electron.launch({ executablePath: executable, args: packaged ? [] : [path.join(root, 'app')], timeout: 30000 })
   const page = await application.firstWindow()
   page.on('pageerror', error => errors.push(error.message))
@@ -73,6 +101,62 @@ async function verify() {
     await page.waitForFunction(() => document.getElementById('validation').textContent.includes('校验通过'))
     ok('生成背景应用到主题，并通过 AUTO-MAS 校验')
     await page.locator('[data-tab="ai"]').click()
+    const referenceUrls = await page.evaluate(() => {
+      const canvas = document.createElement('canvas'); canvas.width = 87; canvas.height = 61
+      const context = canvas.getContext('2d'); context.fillStyle = '#6b3589'; context.fillRect(0, 0, 87, 61)
+      context.fillStyle = '#f8de72'; context.fillRect(8, 8, 39, 39)
+      return [canvas.toDataURL('image/png'), canvas.toDataURL('image/webp')]
+    })
+    const referencePaths = ['reference-private-1.png','reference-private-2.webp'].map(name => path.join(qa, name))
+    referencePaths.forEach((name, index) => fs.writeFileSync(name, Buffer.from(referenceUrls[index].split(',')[1], 'base64')))
+    const chooserPromise = page.waitForEvent('filechooser')
+    await page.locator('#ai-reference-add').click()
+    await (await chooserPromise).setFiles(referencePaths)
+    await page.waitForFunction(() => document.getElementById('ai-reference-count').textContent === '2 / 4')
+    assert.equal(await page.locator('#ai-reference-list img').count(), 2)
+    assert(await page.locator('#ai-reference-list img').first().evaluate(image => image.naturalWidth === 87))
+    const brokenReference = path.join(qa,'broken-reference.png'); fs.writeFileSync(brokenReference, 'not an image')
+    await page.locator('#ai-reference-file').setInputFiles(brokenReference)
+    await page.waitForFunction(() => document.getElementById('toast').textContent.includes('不是 PNG'))
+    assert.equal(await page.locator('#ai-reference-count').textContent(), '2 / 4')
+    await page.locator('#ai-reference-file').setInputFiles([...referencePaths, referencePaths[0]])
+    await page.waitForFunction(() => document.getElementById('toast').textContent.includes('最多 4 张'))
+    assert.equal(await page.locator('#ai-reference-count').textContent(), '2 / 4')
+    await page.locator('#ai-base-url').fill(`${address}/v1/images/generations`)
+    await page.locator('#ai-generate').click()
+    await page.waitForFunction(() => document.getElementById('ai-status').textContent.includes('生成完成'))
+    const multiReference = requests.at(-1)
+    assert.equal(multiReference.path, '/v1/images/edits')
+    assert.equal(multiReference.headers.authorization, `Bearer ${key}`)
+    assert.equal(multiReference.data.prompt.replaceAll('\r\n', '\n'), await page.locator('#ai-prompt').inputValue())
+    assert.equal(multiReference.data.size, '1536x1024')
+    assert.equal(multiReference.images.length, 2)
+    multiReference.images.forEach((image, index) => {
+      assert.equal(image.field, 'image[]')
+      assert(image.bytes.equals(fs.readFileSync(referencePaths[index])))
+    })
+    assert.equal(multiReference.images[0].type, 'image/png')
+    assert.equal(multiReference.images[1].type, 'image/webp')
+    ok('参考图上传与预览、无效文件保留原图、多图真实 multipart 请求与原始字节完整保留')
+    await page.getByRole('button', {name:'移除参考图 1', exact:true}).click()
+    await page.locator('#ai-generate').click()
+    await page.waitForFunction(() => document.getElementById('ai-status').textContent.includes('生成完成'))
+    assert.equal(requests.at(-1).images[0].field, 'image')
+    assert(requests.at(-1).images[0].bytes.equals(fs.readFileSync(referencePaths[1])))
+    const previousResult = await page.locator('#ai-result-image').getAttribute('src')
+    await page.locator('#ai-model').fill('unsupported-reference')
+    await page.locator('#ai-generate').click()
+    await page.waitForFunction(() => document.getElementById('ai-status').textContent.includes('/images/edits'))
+    assert.equal(await page.locator('#ai-result-image').getAttribute('src'), previousResult)
+    await page.getByRole('button', {name:'移除参考图 1', exact:true}).click()
+    await page.locator('#ai-model').fill('fixture-model')
+    await page.locator('#ai-generate').click()
+    await page.waitForFunction(() => document.getElementById('ai-status').textContent.includes('生成完成'))
+    assert.equal(requests.at(-1).path, '/v1/images/generations')
+    assert(requests.at(-1).headers['content-type'].includes('application/json'))
+    await page.locator('#ai-reference-file').setInputFiles(referencePaths)
+    await page.waitForFunction(() => document.getElementById('ai-reference-count').textContent === '2 / 4')
+    ok('单图上传、单独移除、不支持参考图的提示与清空后恢复文字生图')
     await page.selectOption('#ai-target', 'cursor')
     await page.locator('#ai-model').fill('url-model')
     await page.locator('.ai-advanced summary').click()
@@ -121,8 +205,13 @@ async function verify() {
     const dataPath = await application.evaluate(({ app }) => app.getPath('userData'))
     const draft = fs.readFileSync(path.join(dataPath, 'draft.json'), 'utf8')
     assert(!draft.includes(key)); assert(!draft.includes('apiKey'))
+    for (const url of referenceUrls) assert(!draft.includes(url))
+    assert(!draft.includes('reference-private-'))
+    assert(!JSON.stringify(checked).includes('reference-private-'))
+    const exportedFiles = new (dep('adm-zip'))(output).getEntries().filter(entry => !entry.isDirectory).map(entry => entry.getData())
+    for (const referencePath of referencePaths) assert(!exportedFiles.some(bytes => bytes.equals(fs.readFileSync(referencePath))))
     assert(!fs.readFileSync(output).includes(Buffer.from(key)))
-    ok('原图保存、生成素材打包、草稿与主题包均不含密钥')
+    ok('原图保存、生成素材打包、草稿与主题包均不含密钥或参考图')
     await page.locator('#ai-base-url').fill('https://api.openai.com/v1')
     await page.locator('#ai-model').fill('gpt-image-2')
     await page.locator('#ai-key').fill('')
@@ -130,11 +219,15 @@ async function verify() {
     await page.locator('#ai-transparent').uncheck()
     await page.selectOption('#ai-quality', '')
     await page.selectOption('#ai-response-format', '')
-    await page.evaluate(() => { document.getElementById('toast').hidden = true })
+    await page.locator('#ai-settings summary').click()
+    await page.evaluate(() => { document.getElementById('toast').hidden = true; document.querySelector('.workspace').scrollTop = 0 })
     await page.screenshot({ path: path.join(qa, packaged ? 'ai-portable.png' : 'ai.png') })
     await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 720))
     await page.waitForTimeout(100)
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    await page.locator('#new').click(); await page.locator('#confirm-ok').click()
+    await page.locator('[data-tab="ai"]').click()
+    assert.equal(await page.locator('#ai-reference-count').textContent(), '0 / 4')
     assert.deepEqual(errors, [])
     ok('AI 界面最小窗口与无脚本/资源错误')
     fs.writeFileSync(path.join(qa, packaged ? 'ai-portable-report.json' : 'ai-report.json'), JSON.stringify({ packaged, mockedService: true, checks, errors }, null, 2))
