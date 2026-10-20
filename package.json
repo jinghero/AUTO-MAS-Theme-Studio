@@ -1,0 +1,35 @@
+{
+  "name": "auto-mas-theme-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MAS 主题工坊与桌宠工具源码",
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "node": ">=22.16"
+  },
+  "scripts": {
+    "start": "node run.cjs",
+    "build:preview": "node build-preview.cjs",
+    "build": "node build.cjs",
+    "check": "node verify.cjs",
+    "check:mas": "node verify-mas.cjs",
+    "check:ai": "node verify-ai.cjs",
+    "test": "node verify.cjs && node verify-mas.cjs && node verify-ai.cjs && node verify-theme.cjs && node verify-extra.cjs"
+  },
+  "dependencies": {
+    "adm-zip": "0.5.17"
+  },
+  "devDependencies": {
+    "@ant-design/icons-vue": "7.0.1",
+    "@electron/asar": "3.4.1",
+    "@playwright/test": "1.64.0",
+    "@vitejs/plugin-vue": "6.0.5",
+    "ant-design-vue": "4.2.6",
+    "electron": "37.10.3",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vue": "3.5.32",
+    "vue-i18n": "11.4.10",
+    "vue-router": "4.6.4"
+  }
+}

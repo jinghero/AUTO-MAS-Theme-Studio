@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>MAS 主题工坊</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand"><span class="brand-mark"><i></i><i></i><i></i><i></i></span><div><strong>MAS 主题工坊</strong><small>THEME STUDIO</small></div></div>
+    <div class="header-middle"><span class="status-dot"></span><span id="draft-status">本地离线制作 · 自动保存草稿</span></div>
+    <div class="header-actions"><button id="mascot-tool" class="button secondary">桌宠工具</button><button id="open-package" class="button secondary"><span>↥</span> 打开主题 ZIP</button><button id="export" class="button primary">导出主题包 <span>↗</span></button></div>
+  </header>
+  <main class="layout">
+    <nav class="rail" aria-label="制作步骤">
+      <div class="rail-top"><span class="eyebrow">创作工作区</span><h1>让界面<br>有你的风格<span>。</span></h1></div>
+      <div class="steps">
+        <button class="step active" data-tab="info"><span class="step-number">01</span><span><strong>主题信息</strong><small>名称、标识与简介</small></span><b>›</b></button>
+        <button class="step" data-tab="design"><span class="step-number">02</span><span><strong>配色与背景</strong><small>色彩、透明度与布局</small></span><b>›</b></button>
+        <button class="step" data-tab="ai"><span class="step-number">03</span><span><strong>AI 生图</strong><small>内置提示词与自选模型</small></span><b>›</b></button>
+        <button class="step" data-tab="assets"><span class="step-number">04</span><span><strong>图片素材</strong><small>封面、图标与桌宠</small></span><b>›</b></button>
+        <button class="step" data-tab="check"><span class="step-number">05</span><span><strong>检查与导出</strong><small>校验后生成主题 ZIP</small></span><b>›</b></button>
+      </div>
+      <div class="rail-bottom"><div class="mini-logo">M<span>✦</span></div><p>本地导入与导出可离线。<br>AI 生图使用你填写的服务。</p><button id="new" class="text-button">＋ 新建主题</button></div>
+    </nav>
+    <section class="editor" aria-label="主题编辑">
+      <section class="tab-panel" id="tab-info">
+        <div class="panel-heading"><span class="eyebrow">01 / 主题信息</span><h2>从一个名字开始</h2><p>为你的主题起个名字，随时可以修改。</p></div>
+        <label class="field">主题名称 <span class="required">*</span><input id="name" maxlength="80" placeholder="例如：暮色花园"><small>在 AUTO-MAS 的主题列表中显示</small></label>
+        <label class="field">主题标识 <span class="required">*</span><input id="theme-id" maxlength="64" spellcheck="false" placeholder="例如：dusk-garden"><small>小写英文、数字、短横线或下划线；相同标识会覆盖同一主题</small></label>
+        <label class="field">主题简介 <textarea id="description" maxlength="300" rows="4" placeholder="写下这套主题的灵感……"></textarea><small><span id="description-count">0</span> / 300</small></label>
+        <div class="tip"><span>✦</span><p>不需要手写配置文件。完成配色与素材设置后，即可导出主题包。</p></div>
+        <button class="button secondary full next" data-next="design">开始设计 <span>→</span></button>
+      </section>
+      <section class="tab-panel" id="tab-design" hidden>
+        <div class="panel-heading"><span class="eyebrow">02 / 配色与背景</span><h2>调出你的氛围</h2><p>右侧预览会随设置实时更新。</p></div>
+        <div class="field">主题模式<div class="segmented"><button id="mode-light" data-mode="light">☀ 浅色</button><button id="mode-dark" data-mode="dark">☾ 深色</button></div><small>切换模式会重置底色和文字色，保留主题色</small></div>
+        <div class="field">配色灵感<div id="palettes" class="palettes"></div><small>新建主题采用 MAS 默认蓝色；未覆盖的颜色由 MAS 自动生成</small></div>
+        <button id="mas-default-colors" class="text-button">恢复 MAS 默认配色</button>
+        <div id="color-fields" class="color-grid"></div>
+        <label class="field range-field">组件圆角 <output id="radius-value"></output><input id="radius" type="range" min="0" max="32" step="1"></label>
+        <hr><h3>背景图片</h3><div id="background-slot"></div>
+        <div id="background-controls">
+          <div class="two-fields"><label class="field">填充方式<select id="bg-size"><option value="cover">铺满（裁切）</option><option value="contain">完整显示</option><option value="auto">原始大小</option></select></label><label class="field">图片位置<select id="bg-position"><option value="center">居中</option><option value="left top">左上</option><option value="center top">顶部</option><option value="right top">右上</option><option value="left center">左侧</option><option value="right center">右侧</option><option value="left bottom">左下</option><option value="center bottom">底部</option><option value="right bottom">右下</option></select></label></div>
+          <label class="field range-field">背景不透明度 <output id="bg-opacity-value"></output><input id="bg-opacity" type="range" min="0" max="100"></label>
+          <label class="field range-field">卡片不透明度 <output id="surface-opacity-value"></output><input id="surface-opacity" type="range" min="0" max="100"></label>
+        </div>
+        <button class="button secondary full next" data-next="assets">添加更多素材 <span>→</span></button>
+      </section>
+      <section class="tab-panel" id="tab-ai" hidden>
+        <div class="panel-heading"><span class="eyebrow">03 / AI 生图</span><h2>把灵感变成素材</h2><p>填写兼容接口，内置提示词可以直接使用。</p></div>
+        <details id="ai-settings" class="ai-settings" open><summary>生图服务设置</summary>
+          <label class="field">API 地址<input id="ai-base-url" type="url" placeholder="https://api.openai.com/v1" spellcheck="false"><small>支持基础地址或完整 /images/generations 地址</small></label>
+          <label class="field">API Key<div class="key-field"><input id="ai-key" type="password" placeholder="填写你的 API Key" autocomplete="off" spellcheck="false"><button id="ai-key-toggle" type="button" title="显示或隐藏密钥">显示</button></div><small>仅本次运行使用，不写入草稿和主题包</small></label>
+          <label class="field">生图模型<input id="ai-model" placeholder="填写服务商提供的模型名" spellcheck="false"><small>默认 gpt-image-2，可改为服务商提供的兼容模型</small></label>
+        </details>
+        <label class="field">生成用途<select id="ai-target"><option value="background">主题背景</option><option value="cover">主题封面</option><option value="icon">菜单图标</option><option value="mascot">静态桌宠</option><option value="cursor">鼠标光标</option></select></label>
+        <label class="field">灵感与风格<input id="ai-style" maxlength="800" placeholder="例如：森林、奶油绿、柔和手绘"><small>用于套用内置提示词；你也可以直接编辑下方提示词</small></label>
+        <div class="prompt-heading"><label for="ai-prompt">提示词</label><button id="ai-reset-prompt" class="text-button">套用内置提示词 ↻</button></div>
+        <textarea id="ai-prompt" rows="10" maxlength="16000" spellcheck="false"></textarea>
+        <label class="field ai-size-field">生成尺寸<input id="ai-size" list="ai-sizes" placeholder="1536x1024" spellcheck="false"><datalist id="ai-sizes"><option value="1536x1024"><option value="1024x1024"><option value="1024x1536"><option value="auto"></datalist></label>
+        <details class="ai-advanced"><summary>高级选项（按服务商支持情况设置）</summary><label class="field">生成质量<select id="ai-quality"><option value="">使用服务商默认值</option><option value="auto">auto</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="standard">standard（兼容服务）</option><option value="hd">hd（兼容服务）</option></select></label><label class="field">返回格式<select id="ai-response-format"><option value="">自动（不额外传参数）</option><option value="b64_json">b64_json（兼容服务）</option><option value="url">url（兼容服务）</option></select></label><label class="checkbox-field"><input id="ai-transparent" type="checkbox">请求透明背景（接口需支持）</label></details>
+        <div class="tip ai-tip"><span>✦</span><p>每次生成 1 张图片，由你的服务商计费。点击生成时会把提示词发送到所填 API 地址。</p></div>
+        <div class="ai-actions"><button id="ai-generate" class="button primary full">✦ 生成图片</button><button id="ai-cancel" class="button secondary" hidden>取消</button></div>
+        <p id="ai-status" class="validation" role="status"></p>
+      </section>
+      <section class="tab-panel" id="tab-assets" hidden>
+        <div class="panel-heading"><span class="eyebrow">04 / 图片素材</span><h2>用细节表达个性</h2><p>素材均为可选；支持 PNG、JPEG、WebP。</p></div>
+        <h3>主题封面</h3><p class="hint">显示在主题列表中，建议使用横向图片。</p><div id="cover-slot"></div>
+        <hr><h3>菜单图标</h3><p class="hint">默认图标用于没有单独设置的菜单。</p>
+        <label class="field">选择菜单<select id="icon-key"></select></label><div id="icon-slot"></div>
+        <hr><h3>桌宠形象</h3><p class="hint">可导入单张图片，或导入已有桌宠 ZIP 保留动画。</p><div id="mascot-slot"></div>
+        <button id="open-mascot" class="button secondary full">↥ 导入桌宠 ZIP</button>
+        <div class="mascot-tool-actions"><button id="preview-current-mascot" class="text-button">在桌宠工具中预览</button><button id="export-mascot" class="text-button">导出独立桌宠包</button></div>
+        <div id="mascot-controls" hidden><div class="two-fields"><label class="field">显示宽度<input id="mascot-width" type="number" min="16" max="1024"></label><label class="field">位置<select id="mascot-position"><option value="bottom-right">右下</option><option value="bottom-left">左下</option><option value="top-right">右上</option><option value="top-left">左上</option></select></label></div><label class="field range-field">桌宠不透明度 <output id="mascot-opacity-value"></output><input id="mascot-opacity" type="range" min="0" max="100"></label><p id="animation-note" class="hint"></p></div>
+        <hr><h3>鼠标光标</h3><p class="hint">使用 1–64 像素的 PNG；热点决定点击位置。</p><label class="field">光标类型<select id="cursor-key"><option value="default">默认箭头</option><option value="pointer">可点击元素</option><option value="text">文字选择</option></select></label><div id="cursor-slot"></div>
+        <div id="cursor-controls" class="two-fields" hidden><label class="field">热点 X<input id="hotspot-x" type="number" min="0" max="63"></label><label class="field">热点 Y<input id="hotspot-y" type="number" min="0" max="63"></label></div>
+      </section>
+      <section class="tab-panel" id="tab-check" hidden>
+        <div class="panel-heading"><span class="eyebrow">05 / 检查与导出</span><h2>准备好分享了吗</h2><p>生成标准主题 ZIP，可再次打开继续编辑。</p></div>
+        <div class="package-summary"><span class="summary-icon">▧</span><h3 id="summary-name"></h3><p id="summary-id"></p><div><span>图片素材 <b id="asset-count">0</b></span><span>原始大小 <b id="asset-size">0 KB</b></span></div></div>
+        <div class="tip"><span>✓</span><p>导出前会使用 AUTO-MAS 的主题包规则校验。ZIP 最大 16 MB，单张图片最大 8 MB。</p></div>
+        <button id="validate" class="button secondary full">检查主题包</button><p id="validation" class="validation" role="status"></p>
+        <button id="export-panel" class="button primary full">导出主题 ZIP ↗</button>
+        <details class="json-details"><summary>查看 theme.json</summary><pre id="manifest-json"></pre></details>
+        <div class="import-guide"><h3>如何在 AUTO-MAS 使用</h3><p>导出 ZIP 后，在 AUTO-MAS 的主题商店中点击「导入外观包」，选择这个 ZIP，然后应用主题。</p></div>
+      </section>
+    </section>
+    <section class="workspace" aria-label="实时预览">
+      <div class="workspace-top"><div><span class="eyebrow">LIVE PREVIEW</span><h2>你的主题，正在成形</h2></div><span class="preview-label">视觉示意</span></div>
+      <div id="ai-result-panel" class="ai-result-panel" hidden>
+        <div id="ai-empty" class="ai-empty"><span>✦</span><h2>一张图片，一个新灵感。</h2><p>选好用途，填写服务信息后点击生成。<br>生成结果会出现在这里，应用前可以先预览。</p><div>背景 · 封面 · 图标 · 静态桌宠 · 光标</div></div>
+        <div id="ai-result" hidden><div class="ai-image-wrap"><img id="ai-result-image" alt="AI 生成素材预览"></div><div class="ai-result-meta"><strong id="ai-result-title">生成的素材</strong><span id="ai-result-info"></span></div><div id="ai-target-keys"><label class="field" id="ai-icon-key-field" hidden>应用到菜单<select id="ai-icon-key"></select></label><label class="field" id="ai-cursor-key-field" hidden>应用到光标<select id="ai-cursor-key"><option value="default">默认箭头</option><option value="pointer">可点击元素</option><option value="text">文字选择</option></select></label></div><div class="ai-result-buttons"><button id="ai-apply" class="button primary">应用到主题</button><button id="ai-save-image" class="button secondary">保存图片</button></div><p id="ai-result-note" class="hint"></p></div>
+      </div>
+      <div class="preview-wrap">
+        <div id="preview" class="preview">
+          <div id="preview-viewport"><iframe id="mas-preview-frame" title="MAS 实际组件预览" src="mas-preview/index.html"></iframe></div>
+        </div>
+      </div>
+      <div class="workspace-bottom"><div><span class="status-dot"></span><span id="preview-mode-label">浅色主题</span><span class="divider">/</span><span id="preview-scale">1280 × 800</span></div><button id="preview-page-toggle" class="text-button">主页 / 组件预览 ↔</button></div>
+      <p class="preview-disclaimer">复用 MAS 的导航、主页组件和 Ant Design 主题算法；业务数据仅为预览示例。</p>
+      <div id="desktop-mascot-preview" hidden><canvas id="preview-mascot" hidden></canvas><div><strong>桌宠 · 独立桌面窗口</strong><p>桌宠在 MAS 主窗口外悬浮显示。</p><button id="open-mascot-preview" class="text-button">打开动作与图集工具 →</button></div></div>
+      <div id="cover-preview" class="cover-preview" hidden><img alt="主题封面"><div><span class="eyebrow">主题列表封面</span><strong></strong><p></p></div></div>
+    </section>
+  </main>
+  <footer class="app-footer"><span>本地制作 · 标准 theme.json 格式</span><span id="footer-assets">0 张图片</span><button id="help" class="text-button">使用说明</button></footer>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="confirm-dialog"><h2 id="confirm-title"></h2><p id="confirm-text"></p><div><button id="confirm-cancel" class="button secondary">取消</button><button id="confirm-ok" class="button primary">继续</button></div></dialog>
+  <dialog id="help-dialog"><h2>开始制作你的主题</h2><p>1. 填写名称和唯一标识，选择浅色或深色配色。</p><p>2. 在「配色与背景」导入背景并调整透明度。</p><p>3. 可在「AI 生图」填写兼容接口、模型和 API Key，用内置提示词生成素材，再应用到主题。</p><p>4. 按需添加封面、菜单图标、桌宠和鼠标光标。</p><p>5. 导出 ZIP，在 AUTO-MAS 的主题商店中导入并应用。</p><p>草稿自动保存在工具旁的 data 文件夹中（目录不可写时使用系统应用数据目录）。打开主题 ZIP 可继续修改；转移电脑前请先导出 ZIP。</p><p>图片最大 8 MB、宽高不超过 8192 像素；最终 ZIP 最大 16 MB、最多 31 张图片。动画桌宠请导入桌宠 ZIP，本工具会保留其动画。</p><p>本地编辑与导出可离线；AI 生图需要联网，由所填服务商计费。密钥仅当前运行使用。预览为视觉示意。程序未做代码签名。</p><button id="help-close" class="button primary">知道了</button></dialog>
+  <input id="image-file" type="file" accept=".png,.jpg,.jpeg,.webp" hidden>
+  <input id="theme-file" type="file" accept=".zip" hidden>
+  <input id="mascot-file" type="file" accept=".zip" hidden>
+  <script src="mas-preview/runtime.js"></script>
+  <script src="preview-host.js"></script>
+  <script src="image-support.js"></script>
+  <script src="ai.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

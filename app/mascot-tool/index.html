@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>桌宠预览器</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app">
+    <header class="header">
+      <div><h1>桌宠预览器</h1><p>资源载入 · 动作预览 · 逐帧检查</p></div>
+      <div class="header-actions">
+        <button id="demo" class="quiet">载入示例</button>
+        <select id="theme" aria-label="界面主题"><option value="system">跟随系统</option><option value="light">浅色界面</option><option value="dark">深色界面</option></select>
+        <button id="open" class="primary">打开资源…</button>
+        <input id="file" type="file" accept=".zip,.png,.jpg,.jpeg,.webp" hidden>
+      </div>
+    </header>
+    <div id="error" role="alert" hidden></div>
+    <section class="workspace">
+      <div class="preview-column">
+        <div class="source-line"><h2 id="name">内置示例</h2><span id="source" class="muted"></span></div>
+        <div id="stage" data-background="checker">
+          <div class="stage-top"><span id="action-badge">待机</span><span class="stage-hint">拖入 ZIP 或图片</span></div>
+          <canvas id="canvas" role="img" aria-label="桌宠当前动作预览"></canvas>
+          <span id="size-info" class="stage-bottom"></span>
+        </div>
+        <div class="timeline">
+          <div class="timeline-heading"><span>当前帧 <output id="frame-label">1 / 24</output></span><span id="cell-info" class="muted"></span></div>
+          <input id="frame" type="range" min="0" max="23" value="0" aria-label="当前帧">
+          <div class="playback">
+            <button id="previous" aria-label="上一帧">← 上一帧</button>
+            <button id="play" class="primary">暂停</button>
+            <button id="next" aria-label="下一帧">下一帧 →</button>
+          </div>
+        </div>
+        <details id="sheet-section"><summary>查看完整图集</summary><canvas id="sheet" role="img" aria-label="当前图集与所选帧边界"></canvas></details>
+      </div>
+      <aside class="controls">
+        <section class="control-section">
+          <h2>动作与播放</h2>
+          <label for="action">预览动作</label><select id="action"></select>
+          <div id="look-controls" hidden><label for="look">视线方向</label><select id="look"><option value="0">左上</option><option value="1">上</option><option value="2">右上</option><option value="3">左</option><option value="4" selected>正前方</option><option value="5">右</option><option value="6">左下</option><option value="7">下</option><option value="8">右下</option></select></div>
+          <div class="label-row"><label for="fps">播放帧率</label><label class="check"><input id="package-fps" type="checkbox" checked>跟随资源包</label></div>
+          <div class="number-unit"><input id="fps" type="number" min="1" max="120" step="1" value="12" disabled><span>FPS</span></div>
+          <p id="duration" class="muted"></p>
+        </section>
+        <section class="control-section">
+          <h2>显示效果</h2>
+          <div class="label-row"><label for="width">预览宽度</label><output id="width-label">192 px</output></div>
+          <input id="width" type="range" min="16" max="1024" step="1" value="192">
+          <div class="label-row"><label for="opacity">不透明度</label><output id="opacity-label">100%</output></div>
+          <input id="opacity" type="range" min="0" max="100" step="1" value="100">
+          <label for="background">预览背景</label><select id="background"><option value="checker">透明棋盘格</option><option value="light">浅色背景</option><option value="dark">深色背景</option></select>
+          <label class="check pixel"><input id="pixel" type="checkbox">像素清晰模式</label>
+        </section>
+        <details id="parameters"><summary>图集参数</summary>
+          <div id="raw-controls" hidden><label for="raw-kind">单图用途</label><select id="raw-kind"><option value="static">静态图片</option><option value="main">待机 / 工作图集</option><option value="result">失败 / 成功图集</option><option value="drag">拖拽图集</option><option value="look">3 × 3 视线图集</option></select></div>
+          <div class="parameter-grid"><div><label for="columns">每行列数</label><input id="columns" type="number" min="2" max="120" step="1" value="8"></div><div><label for="count">每动作帧数</label><input id="count" type="number" min="2" max="120" step="1" value="24"></div></div>
+          <p id="parameter-hint" class="muted">每个动作按行排列；末行空格不参与播放。</p>
+        </details>
+      </aside>
+    </section>
+    <footer><span id="status" role="status">示例素材已载入</span><span>离线使用 · 文件仅在本机读取 · 空格 播放 / 暂停</span></footer>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>
