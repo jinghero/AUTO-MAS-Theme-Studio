@@ -37,6 +37,7 @@ async function verify() {
     await frame.locator('.page-title').waitFor()
     assert.equal(await page.locator('#text-colorBgContainer').inputValue(), '#ffffff')
     assert.equal(await frame.locator('body').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(245, 245, 245)')
+    assert.equal(await frame.locator('.ant-btn-primary').first().evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(84, 132, 102)')
     assert.equal(await page.locator('#page-title-enabled').isChecked(), false)
     assert((await frame.locator('.page-title').evaluate(node => getComputedStyle(node).backgroundImage)).includes('linear-gradient'))
     await page.locator('#page-title-enabled').check()
@@ -81,6 +82,9 @@ async function verify() {
     await page.locator('#page-title-enabled').check()
     await page.locator('#mas-default-colors').click()
     assert.equal(await page.locator('#page-title-enabled').isChecked(), false)
+    assert(!JSON.parse(await page.locator('#manifest-json').textContent()).tokens.colorPageTitle)
+    await page.waitForFunction(() => !document.querySelector('#mas-preview-frame').contentDocument.documentElement.style.getPropertyValue('--app-page-title-color'))
+    assert((await frame.locator('.page-title').evaluate(node => getComputedStyle(node).backgroundImage)).includes('linear-gradient'))
     console.log('PASS 标题独立配色、按钮和卡片不变、明暗模式、配色切换、草稿恢复、导出与清除')
   } finally { if (application) await application.close() }
 }
