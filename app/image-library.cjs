@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
 const { decodeImage } = require('./package-service.cjs')
-const { imageURL } = require('./image-api.cjs')
+const { imageURL, validateReferences } = require('./image-api.cjs')
 
 const targets = new Set(['background', 'cover', 'icon', 'mascot', 'cursor'])
 const validId = id => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id)
@@ -20,14 +20,27 @@ function imageBytes(url) {
   if (!url.startsWith(`data:${checked.mime};`)) throw new Error('素材图片格式不一致')
   return { bytes, extension:checked.mime === 'image/png' ? 'png' : checked.mime === 'image/webp' ? 'webp' : 'jpg' }
 }
+function referenceMetadata(reference) {
+  if (!validId(reference.id) || !['png','jpg','webp'].includes(reference.extension)) throw new Error('参考图信息已损坏')
+  for (const dimension of [reference.width, reference.height])
+    if (!Number.isInteger(dimension) || dimension < 1 || dimension > 8192) throw new Error('参考图尺寸无效')
+  if (!Number.isInteger(reference.bytes) || reference.bytes < 1 || reference.bytes > 8 * 1024 * 1024) throw new Error('参考图大小无效')
+  return {id:reference.id, extension:reference.extension, name:text(reference.name,255), width:reference.width, height:reference.height, bytes:reference.bytes}
+}
 function createImageLibrary(directory) {
+  const referenceDirectory = path.join(directory,'references')
   function readEntry(id) {
     if (!validId(id)) throw new Error('素材编号无效')
     const file = path.join(directory, `${id}.json`)
     if (fs.statSync(file).size > 160 * 1024) throw new Error('素材信息过大')
     const entry = JSON.parse(fs.readFileSync(file, 'utf8'))
     if (entry.id !== id || !['png', 'jpg', 'webp'].includes(entry.extension) || !Number.isFinite(Date.parse(entry.createdAt))) throw new Error('素材信息已损坏')
-    return { ...metadata(entry), id, createdAt:entry.createdAt, extension:entry.extension, bytes:entry.bytes }
+    const references = entry.references ?? []
+    if (!Array.isArray(references) || references.length > 4) throw new Error('参考图信息已损坏')
+    const checked = references.map(referenceMetadata)
+    if (checked.reduce((total,reference) => total + reference.bytes,0) > 16 * 1024 * 1024) throw new Error('参考图总大小不能超过 16 MB')
+    return { ...metadata(entry), id, createdAt:entry.createdAt, extension:entry.extension, bytes:entry.bytes,
+      references:checked, referencesStored:entry.referencesStored === true }
   }
   function atomicWrite(file, bytes) {
     const temporary = `${file}.${randomUUID()}.tmp`
@@ -37,11 +50,27 @@ function createImageLibrary(directory) {
   function save(input) {
     const info = metadata(input), image = imageBytes(input.url), thumb = imageBytes(input.thumbnail)
     if (thumb.extension !== 'png' || thumb.bytes.length > 256 * 1024) throw new Error('素材缩略图无效或过大')
+    const sources = validateReferences(input.referenceImages)
+    const references = sources.map((source,index) => {
+      const original = input.referenceImages[index]
+      return referenceMetadata({id:createHash('sha256').update(source.data).digest('hex'),
+        extension:source.mime === 'image/jpeg' ? 'jpg' : source.mime.slice(6), name:original.name || `参考图 ${index+1}`,
+        width:original.width, height:original.height, bytes:source.bytes})
+    })
+    const referencesStored = Array.isArray(input.referenceImages)
     // 相同图片、用途和生成说明复用同一条记录，避免恢复草稿时重复归档。
-    const id = createHash('sha256').update(image.bytes).update(JSON.stringify(info)).digest('hex')
+    const hash = createHash('sha256').update(image.bytes).update(JSON.stringify(info))
+    if (referencesStored) hash.update(JSON.stringify({references}))
+    const id = hash.digest('hex')
     fs.mkdirSync(directory, {recursive:true})
-    const entry = {...info, id, extension:image.extension, bytes:image.bytes.length, createdAt:new Date().toISOString()}
+    const entry = {...info, id, extension:image.extension, bytes:image.bytes.length, createdAt:new Date().toISOString(), references, referencesStored}
     const record = path.join(directory, `${id}.json`)
+    if (sources.length) fs.mkdirSync(referenceDirectory, {recursive:true})
+    for (const [index,source] of sources.entries()) {
+      const reference = references[index], file = path.join(referenceDirectory,`${reference.id}.${reference.extension}`)
+      // 共享参考图按内容去重，整套图标只保存一份；损坏或缺失时可以重试修复。
+      if (!fs.existsSync(file) || fs.statSync(file).size !== source.bytes || createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== reference.id) atomicWrite(file,source.data)
+    }
     if (fs.existsSync(record)) {
       const existing = readEntry(id)
       if (fs.existsSync(path.join(directory, `${id}.${existing.extension}`)) && fs.existsSync(path.join(directory, `${id}.thumb.png`))) return {entry:existing}
@@ -79,6 +108,20 @@ function createImageLibrary(directory) {
     if (fs.statSync(file).size > 8 * 1024 * 1024) throw new Error('素材原图超过 8 MB')
     return {entry, image:imageURL(fs.readFileSync(file))}
   }
-  return {save, list, read, directory}
+  function readReferences(id) {
+    const entry = readEntry(id)
+    const referenceImages = entry.references.map(reference => {
+      const file = path.join(referenceDirectory,`${reference.id}.${reference.extension}`)
+      if (!fs.existsSync(file)) throw new Error(`参考图「${reference.name}」缺失，请重新添加原图或恢复 data 文件夹`)
+      if (fs.statSync(file).size !== reference.bytes) throw new Error('参考图文件已损坏，请重新添加原图')
+      const bytes = fs.readFileSync(file)
+      if (createHash('sha256').update(bytes).digest('hex') !== reference.id) throw new Error('参考图文件已损坏，请重新添加原图')
+      const image = imageURL(bytes)
+      if (image.mime !== (reference.extension === 'jpg' ? 'image/jpeg' : `image/${reference.extension}`)) throw new Error('参考图格式已损坏')
+      return {name:reference.name, width:reference.width, height:reference.height, ...image}
+    })
+    return {referenceImages, referencesStored:entry.referencesStored}
+  }
+  return {save, list, read, readReferences, directory}
 }
 module.exports = {createImageLibrary}

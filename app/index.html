@@ -69,7 +69,7 @@
           <div id="ai-reference-list" class="ai-reference-list"></div>
           <button id="ai-reference-add" class="button secondary full" type="button">＋ 添加参考图</button>
           <input id="ai-reference-file" type="file" accept=".png,.jpg,.jpeg,.webp" multiple hidden>
-          <p class="hint">最多 4 张，单张 8 MB、合计 16 MB。仅本次使用，不写入草稿或主题包；生成时上传到所填服务商。服务商需支持参考图生成。</p>
+          <p class="hint">最多 4 张，单张 8 MB、合计 16 MB。生成后随素材保存在本机，复用提示词时自动恢复；不加入主题 ZIP。生成时上传到所填服务商，需支持参考图生成。</p>
           <details class="ai-vision-settings"><summary>参考图转提示词设置</summary>
             <label class="field">看图模型<input id="ai-vision-model" placeholder="填写支持图片输入的对话模型名" maxlength="200" spellcheck="false"><small>看图模型与生图模型分别填写，默认复用上方服务地址和 API Key</small></label>
             <label class="checkbox-field"><input id="ai-vision-separate" type="checkbox">使用独立的看图服务</label>
@@ -130,7 +130,7 @@
         <button id="ai-archive" class="button secondary" hidden>重试保存到素材库</button>
         <details id="ai-library" class="ai-library" open>
           <summary id="ai-library-title">本地素材库</summary>
-          <p class="hint">自动保留原图、提示词和用途；可重新选用图片或复用提示词。</p>
+          <p class="hint">自动保留原图、提示词、用途和原参考图；复用提示词时会恢复当时的参考图。</p>
           <div class="library-toolbar"><button id="ai-library-refresh" class="text-button">刷新</button><button id="ai-library-folder" class="text-button">打开素材文件夹</button></div>
           <p id="ai-library-path" class="hint"></p><div id="ai-library-grid" class="ai-icon-grid"></div>
           <div class="library-toolbar"><button id="ai-library-prev" class="text-button">上一页</button><span id="ai-library-status" class="hint" role="status"></span><button id="ai-library-next" class="text-button">下一页</button></div>

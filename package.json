@@ -1,6 +1,6 @@
 {
   "name": "auto-mas-theme-studio",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "MAS 主题工坊与桌宠工具源码",
   "license": "AGPL-3.0-only",
@@ -11,6 +11,7 @@
     "start": "node run.cjs",
     "build:preview": "node build-preview.cjs",
     "build": "node build.cjs",
+    "docs:images": "node capture-guide.cjs",
     "check": "node verify.cjs",
     "check:mas": "node verify-mas.cjs",
     "check:ai": "node verify-ai.cjs",

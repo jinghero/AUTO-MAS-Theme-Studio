@@ -12,7 +12,7 @@ const executablePath = packaged ? path.join(root, 'dist/MAS创作工具箱/MAS�
 const key = 'fixture-secret-icons-only', marker = `本地图标验证-${Date.now()}`
 const requests = [], checks = [], errors = []
 const ok = label => { checks.push(label); console.log('PASS', label) }
-let application, page, address, png, failAt = 0, holdAt = 0, blockArchive, blockedFile
+let application, page, address, png, failAt = 0, holdAt = 0, blockArchive, blockedFile, blockReferences
 const server = http.createServer(async (request, response) => {
   const chunks = []; for await (const chunk of request) chunks.push(chunk)
   const raw = Buffer.concat(chunks), images = []; let data
@@ -26,7 +26,7 @@ const server = http.createServer(async (request, response) => {
   requests.push({path:request.url, headers:request.headers, data, images})
   if (blockArchive) {
     const {directory,...info} = blockArchive
-    const id = createHash('sha256').update(png).update(JSON.stringify({...info,prompt:data.prompt.replace(/\r\n/g,'\n')})).digest('hex')
+    const id = createHash('sha256').update(png).update(JSON.stringify({...info,prompt:data.prompt.replace(/\r\n/g,'\n')})).update(JSON.stringify({references:blockReferences})).digest('hex')
     blockedFile = path.join(directory,id+'.png'); fs.mkdirSync(blockedFile); blockArchive = null
   }
   if (requests.length === holdAt) return
@@ -72,6 +72,8 @@ async function verify() {
       const file = path.join(qa, `icon-original-reference-${index}.${index ? 'webp' : 'png'}`)
       fs.writeFileSync(file, Buffer.from(url.split(',')[1],'base64')); return file
     })
+    blockReferences = refPaths.map((file,index) => ({id:createHash('sha256').update(fs.readFileSync(file)).digest('hex'),
+      extension:index ? 'webp' : 'png',name:path.basename(file),width:81,height:61,bytes:fs.statSync(file).size}))
     const source = readPackage(fs.readFileSync(path.join(root,'示例主题-林间来信.zip')), 'theme')
     const hidden = ['testRouter','ocrDev','overlayMaskDev','updateDownloadDev','tools']
     const hiddenPath = source.manifest.menuIcons.default
@@ -115,9 +117,15 @@ async function verify() {
       assert(read.success); assert(Buffer.from(read.image.url.split(',')[1],'base64').equals(png))
       assert(!JSON.stringify(entry).includes(key)); assert(!Object.hasOwn(entry, 'apiKey'))
       for (const url of urls.slice(1)) assert(!JSON.stringify(entry).includes(url))
+      assert.deepEqual(entry.references,blockReferences); assert.equal(entry.referencesStored,true)
+      const references = await page.evaluate(id => window.studio.readLibraryReferences(id),entry.id)
+      assert(references.success); assert.deepEqual(references.referenceImages.map(reference => reference.url),urls.slice(1))
+      assert.deepEqual(references.referenceImages.map(reference => reference.name),refPaths.map(file => path.basename(file)))
     }
+    const referenceFolder = path.join(library.directory,'references')
+    for (const reference of blockReferences) assert(fs.readFileSync(path.join(referenceFolder,`${reference.id}.${reference.extension}`)).equals(fs.readFileSync(refPaths[blockReferences.indexOf(reference)])))
     assert.equal((await page.evaluate(() => window.studio.readLibraryImage('../draft'))).success, false)
-    ok('11 张原图与提示词独立归档，保留原始字节和尺寸，不保存密钥或输入参考图')
+    ok('11 张原图与提示词独立归档，共享参考图按内容去重，原始字节、顺序与文件名完整保留，密钥不归档')
     await page.getByRole('checkbox',{name:'使用主页图标',exact:true}).uncheck()
     await page.locator('#ai-apply-icons').click()
     await page.waitForFunction(() => document.getElementById('toast').textContent.includes('已应用 10'))
@@ -191,17 +199,20 @@ async function verify() {
     await page.waitForFunction(() => !document.getElementById('ai-result').hidden)
     assert.equal(await page.locator('#ai-result-image').getAttribute('src'),urls[0])
     assert.equal(await page.locator('#ai-icon-key').inputValue(),entry.iconKey)
-    await page.locator('#ai-reference-file').setInputFiles(refPaths)
-    await page.waitForFunction(() => document.getElementById('ai-reference-count').textContent === '2 / 4')
+    const otherReference = path.join(qa,'icon-other-reference.png'); fs.writeFileSync(otherReference,png)
+    await page.locator('#ai-reference-file').setInputFiles(otherReference)
+    await page.waitForFunction(() => document.getElementById('ai-reference-count').textContent === '1 / 4')
     await card.getByRole('button',{name:'复用提示词',exact:true}).click()
+    await page.waitForFunction(() => document.getElementById('ai-reference-count').textContent === '2 / 4')
     assert.equal(await page.locator('#ai-prompt').inputValue(),entry.basePrompt)
     assert.equal(await page.locator('#ai-target').inputValue(),'icon')
     assert.equal(await page.locator('#ai-icon-target').inputValue(),entry.iconKey)
     assert.equal(await page.locator('#ai-reference-count').textContent(),'2 / 4')
+    assert.deepEqual(await page.locator('#ai-reference-list img').evaluateAll(images => images.map(image => image.src)),urls.slice(1))
     assert.equal(requests.length,start + 1)
     await page.locator('#ai-apply').click()
     await page.waitForFunction(key => JSON.parse(document.getElementById('manifest-json').textContent).menuIcons?.[key],entry.iconKey)
-    ok('切换主题停止旧批次，素材库可离线复用原图和专属提示词，保留当前参考图')
+    ok('切换主题停止旧批次，素材库离线复用原图和专属提示词，原参考图会替换当前选择')
     const libraryPath = library.directory
     const diskRecord = JSON.parse(fs.readFileSync(path.join(libraryPath,entry.id+'.json'),'utf8'))
     assert.equal(diskRecord.prompt,entry.prompt); assert(!JSON.stringify(diskRecord).includes(key))
@@ -216,7 +227,24 @@ async function verify() {
     assert.equal(await page.locator('#ai-key').inputValue(),'')
     assert.equal(await page.locator('#ai-reference-count').textContent(),'0 / 4')
     assert.deepEqual(errors,[])
-    ok('重启仍能读取独立原图、用途和提示词，密钥与输入参考图不恢复')
+    await page.locator(`[data-library-id="${entry.id}"]`).getByRole('button',{name:'复用提示词',exact:true}).click()
+    await page.waitForFunction(() => document.getElementById('ai-reference-count').textContent === '2 / 4')
+    await page.locator('#ai-base-url').fill(address+'/v1'); await page.locator('#ai-key').fill(key); await page.locator('#ai-model').fill('fixture-icons')
+    const reuseStart = requests.length; await page.locator('#ai-generate').click(); await idle()
+    assert.equal(requests.length,reuseStart+1)
+    for (const [index,reference] of requests.at(-1).images.entries()) assert(reference.bytes.equals(fs.readFileSync(refPaths[index])))
+    assert.equal(requests.at(-1).images.length,2)
+    ok('重启后复用提示词自动恢复两张参考图，再次生图实际上传原字节，密钥仍需重新填写')
+    const emptyReference = await page.evaluate(async ({url,prompt}) => window.studio.saveLibraryImage({url,
+      thumbnail:await window.themeImages.fit(url,128),target:'cover',width:512,height:384,prompt,referenceImages:[]}),{url:urls[0],prompt:marker+'-无参考图'})
+    assert(emptyReference.success); assert.equal(emptyReference.entry.referencesStored,true)
+    await page.locator('#ai-library-refresh').click()
+    const noRequestStart = requests.length
+    await page.locator(`[data-library-id="${emptyReference.entry.id}"]`).getByRole('button',{name:'复用提示词',exact:true}).click()
+    await page.waitForFunction(() => document.getElementById('ai-reference-count').textContent==='0 / 4')
+    assert.equal(await page.locator('#ai-prompt').inputValue(),marker+'-无参考图')
+    assert.equal(requests.length,noRequestStart)
+    ok('无参考图的新记录复用时清空当前选择，不产生生图请求')
     const dataPath = await application.evaluate(({app}) => app.getPath('userData'))
     await application.close(); application = null
     const draftPath = path.join(dataPath,'draft.json'), legacy = JSON.parse(fs.readFileSync(draftPath,'utf8'))
@@ -237,7 +265,7 @@ async function verify() {
     await page.locator('[data-tab="ai"]').click()
     ok('旧版草稿最后一张生成结果自动补存，不误记后来修改的提示词或自动应用主题')
     const isolated = fs.mkdtempSync(path.join(qa,'library-unit-')), service = createImageLibrary(isolated)
-    const input = {...entry, url:urls[0], thumbnail:entry.thumbnail, apiKey:key, referenceImages:[{url:urls[1]}]}
+    const input = {...entry, url:urls[0], thumbnail:entry.thumbnail, apiKey:key, referenceImages:[{url:urls[1],name:'原参考图.png',width:81,height:61}]}
     const saved = service.save(input); assert.equal(service.save(input).entry.id,saved.entry.id)
     assert.equal(service.list().total,1)
     assert(!JSON.stringify(service.read(saved.entry.id).entry).includes(key))
@@ -253,6 +281,17 @@ async function verify() {
       const saved = service.save({...input,url,target:'cover',width:81,height:61})
       assert.equal(service.read(saved.entry.id).image.url,url)
     }
+    assert.equal(service.readReferences(saved.entry.id).referenceImages[0].url,urls[1])
+    assert.equal(fs.readdirSync(path.join(isolated,'references')).length,1)
+    const referenceFile = path.join(isolated,'references',saved.entry.references[0].id+'.png')
+    fs.writeFileSync(referenceFile,Buffer.alloc(fs.statSync(referenceFile).size))
+    assert.throws(() => service.readReferences(saved.entry.id),/已损坏/)
+    service.save(input)
+    assert.equal(service.readReferences(saved.entry.id).referenceImages[0].url,urls[1])
+    const legacyRecord = JSON.parse(fs.readFileSync(path.join(isolated,saved.entry.id+'.json'),'utf8'))
+    delete legacyRecord.references; delete legacyRecord.referencesStored
+    fs.writeFileSync(path.join(isolated,saved.entry.id+'.json'),JSON.stringify(legacyRecord))
+    assert.equal(service.readReferences(saved.entry.id).referencesStored,false)
     ok('归档去重、分页、损坏记录隔离、写入失败与路径限制')
     await application.evaluate(({BrowserWindow}) => BrowserWindow.getAllWindows()[0].setSize(1000,720))
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))

@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('studio', {
   saveLibraryImage: input => ipcRenderer.invoke('studio:library-save', input),
   listLibraryImages: input => ipcRenderer.invoke('studio:library-list', input),
   readLibraryImage: id => ipcRenderer.invoke('studio:library-read', {id}),
+  readLibraryReferences: id => ipcRenderer.invoke('studio:library-references', {id}),
   openLibraryFolder: () => ipcRenderer.invoke('studio:library-folder'),
   openMascotTool: state => ipcRenderer.invoke('studio:mascot-tool', state),
   exportMascot: state => ipcRenderer.invoke('studio:mascot-export', state),

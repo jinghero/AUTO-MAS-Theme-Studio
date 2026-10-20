@@ -42,6 +42,7 @@ handler('studio:image', input => ({ info: imageInfo(input.url) }))
 handler('studio:library-save', input => imageLibrary.save(input))
 handler('studio:library-list', input => imageLibrary.list(input))
 handler('studio:library-read', input => imageLibrary.read(input?.id))
+handler('studio:library-references', input => imageLibrary.readReferences(input?.id))
 handler('studio:library-folder', async () => {
   fs.mkdirSync(imageLibrary.directory, {recursive:true})
   const error = await shell.openPath(imageLibrary.directory)

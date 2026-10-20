@@ -22,7 +22,7 @@
       const name = document.createElement('strong')
       name.textContent = entry.target === 'icon' ? window.themeIconSet.find(icon => icon.key === entry.iconKey)?.label || targets.icon : targets[entry.target]
       const info = document.createElement('p'); info.className = 'hint'
-      info.textContent = `${entry.width} × ${entry.height} · ${new Date(entry.createdAt).toLocaleString()}${entry.model ? ` · ${entry.model}` : ''}`
+      info.textContent = `${entry.width} × ${entry.height} · ${new Date(entry.createdAt).toLocaleString()}${entry.model ? ` · ${entry.model}` : ''} · ${entry.referencesStored ? `${entry.references.length} 张参考图` : '旧记录未保存参考图'}`
       const actions = document.createElement('div'); actions.className = 'library-actions'
       const use = document.createElement('button'); use.textContent = '选用图片'; use.className = 'text-button'
       use.onclick = async () => {
@@ -56,6 +56,8 @@
       const result = await window.studio.saveLibraryImage({...image, thumbnail})
       if (!result.success) throw new Error(result.error)
       image.libraryId = result.entry.id; delete image.libraryError
+      image.references = result.entry.references; image.referencesStored = result.entry.referencesStored
+      delete image.referenceImages
       await refresh(true)
       return true
     } catch (error) { image.libraryError = error.message; return false }

@@ -154,7 +154,7 @@
     if (!apiKey) { $('ai-key').focus(); hooks.toast('请在工具里填写 API Key', true); return }
     const config = structuredClone(settings()), owner = hooks.getState()
     renderReferences()
-    const references = referenceImages.map(({ url }) => ({ url }))
+    const references = structuredClone(referenceImages)
     if (!config.prompt?.trim()) { hooks.toast('请填写提示词，或点击「套用内置提示词」', true); return }
     generating = true; started = Date.now()
     renderReferences()
@@ -167,7 +167,7 @@
       const response = await window.studio.generate({ ...config, apiKey, prompt:config.target === 'icon' ? iconPrompt(config, config.iconKey || 'default') : config.prompt, referenceImages: references })
       if (!response.success) throw new Error(response.error)
       const info = await window.themeImages.inspect(response.image.url, '生成的图片')
-      const image = {...response.image, ...info, ...generationMetadata(config, config.iconKey || 'default')}
+      const image = {...response.image, ...info, ...generationMetadata(config, config.iconKey || 'default'), referenceImages:references}
       const saved = await window.themeLibrary.save(image)
       if (owner !== hooks.getState()) { hooks.toast(saved ? '图片已存入本地素材库，可在当前主题选用' : `素材库保存失败：${image.libraryError}`, !saved); return }
       owner.aiResult = image
@@ -222,7 +222,7 @@
     const apiKey = $('ai-key').value.trim()
     if (!apiKey) { $('ai-key').focus(); hooks.toast('请在工具里填写 API Key', true); return }
     renderReferences()
-    const config = structuredClone(settings()), owner = hooks.getState(), references = referenceImages.map(({url}) => ({url}))
+    const config = structuredClone(settings()), owner = hooks.getState(), references = structuredClone(referenceImages)
     if (!config.prompt?.trim()) { hooks.toast('请填写共同的风格提示词', true); return }
     let result = owner.aiResult
     if (result?.items?.some(item => item.archiveSource)) { hooks.toast('请先重试保存未归档的原图', true); return }
@@ -247,7 +247,7 @@
         try {
           const response = await window.studio.generate({...config, target:'icon', apiKey, prompt:iconPrompt(config, item.key), referenceImages:references})
           if (!response.success) throw new Error(response.error)
-          const original = {...response.image, ...await window.themeImages.inspect(response.image.url, '生成的图标'), ...generationMetadata(config, item.key)}
+          const original = {...response.image, ...await window.themeImages.inspect(response.image.url, '生成的图标'), ...generationMetadata(config, item.key), referenceImages:references}
           const saved = await window.themeLibrary.save(original)
           if (owner !== hooks.getState()) break
           const url = await window.themeImages.fit(response.image.url, 128), info = await window.themeImages.inspect(url, '生成的图标')
@@ -319,19 +319,32 @@
       hooks.selectTab(result.target === 'background' ? 'design' : 'assets')
     } catch (error) { hooks.toast(`无法应用：${error.message}`, true) }
   }
+  async function reusePrompt(entry) {
+    if (generating || describing || loadingReferences) return
+    const context = promptContext()
+    loadingReferences = true; renderReferences(); renderResult()
+    try {
+      const restored = await window.studio.readLibraryReferences(entry.id)
+      if (!restored.success) throw new Error(restored.error)
+      const references = []
+      for (const reference of restored.referenceImages) references.push({...reference, ...await window.themeImages.inspect(reference.url, reference.name)})
+      if (!sameContext(context)) throw new Error('主题、用途或风格已改变，请重新复用提示词')
+      if (restored.referencesStored) { referenceOwner = context.owner; referenceImages = references; referenceVersion++ }
+      const config = settings(); config.target = entry.target; config.prompt = entry.basePrompt || entry.prompt
+      config.style = entry.style || config.style; config.size = ['background','cover'].includes(entry.target) ? '1536x1024' : '1024x1024'
+      if (entry.target === 'icon' && iconSet.some(icon => icon.key === entry.iconKey)) {
+        config.iconKey = entry.iconKey; config.iconBatch = false
+        if (entry.iconSubject) { config.iconPrompts ||= {}; config.iconPrompts[entry.iconKey] = entry.iconSubject }
+      }
+      clearSuggestion(); render(); hooks.changed()
+      hooks.toast(restored.referencesStored ? `已复用提示词，并恢复 ${references.length} 张原参考图` : '已复用提示词；此旧记录未保存参考图，请自行添加或检查当前选择')
+    } catch (error) { hooks.toast(`无法复用提示词：${error.message}`,true) }
+    finally { loadingReferences = false; renderReferences(); renderResult() }
+  }
   function init(options) {
     hooks = options
-    window.themeLibrary.init({...hooks, busy:() => generating || describing || loadingReferences,
-      useImage:image => { hooks.getState().aiResult = image; hooks.changed(); renderResult(); hooks.toast('已选用原图，请预览后应用到主题') },
-      usePrompt:entry => {
-        const config = settings(); config.target = entry.target; config.prompt = entry.basePrompt || entry.prompt
-        config.style = entry.style || config.style; config.size = ['background','cover'].includes(entry.target) ? '1536x1024' : '1024x1024'
-        if (entry.target === 'icon' && iconSet.some(icon => icon.key === entry.iconKey)) {
-          config.iconKey = entry.iconKey; config.iconBatch = false
-          if (entry.iconSubject) { config.iconPrompts ||= {}; config.iconPrompts[entry.iconKey] = entry.iconSubject }
-        }
-        clearSuggestion(); render(); hooks.changed(); hooks.toast('已复用提示词；再次生成时仍使用当前选择的参考图')
-      }})
+    window.themeLibrary.init({...hooks, busy:() => generating || describing || loadingReferences, usePrompt:reusePrompt,
+      useImage:image => { hooks.getState().aiResult = image; hooks.changed(); renderResult(); hooks.toast('已选用原图，请预览后应用到主题') }})
     $('ai-archive').onclick = async () => { await window.themeLibrary.save(hooks.getState().aiResult); hooks.changed(); renderResult() }
     $('ai-archive-icons').onclick = async () => {
       const result = hooks.getState().aiResult
@@ -403,7 +416,7 @@
       const candidate = {...source, target:source.target || 'icon', iconKey:source.iconKey || image.key}
       const saved = await window.themeLibrary.save(candidate)
       // 旧草稿缺少生成说明时，只归档已保存的图片，不猜测当时使用的提示词。
-      if (saved) { image.libraryId = candidate.libraryId; delete image.libraryError; delete image.archiveSource }
+      if (saved) { image.libraryId = candidate.libraryId; delete image.libraryError; delete image.archiveSource; delete image.referenceImages }
       else image.libraryError = candidate.libraryError
     }
     if (owner === hooks.getState() && result) { hooks.changed(); renderResult() }
