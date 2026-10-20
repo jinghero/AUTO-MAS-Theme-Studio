@@ -39,30 +39,36 @@ npm ci
 npm start
 ```
 
-依赖在本项目内安装，不需要安装或克隆 AUTO-MAS。已包含构建好的 MAS 预览资源，可直接启动。
+依赖在本项目内安装，不需要安装或克隆 AUTO-MAS。启动前会自动将应用、兼容层与 MAS 预览的 TypeScript 编译到 `.build/app/`。
 
 ## 构建
 
 ```powershell
-# 修改 preview-src 后重新生成 MAS 预览
-npm run build:preview
+# 检查类型、异步调用规则与格式
+npm run quality
 
-# 打包 Windows 便携版
+# 自动完成质量检查、编译并打包 Windows 便携版
 npm run build
 ```
 
 输出位于 `dist/MAS创作工具箱` 和 `dist/MAS创作工具箱-便携版.zip`。
 
-仅在维护上游快照时，`node setup.cjs` 从 AUTO-MAS 的 `upstream/dev` 更新主题校验模块，`node prepare-preview.cjs` 更新 MAS 布局与主页组件。它们默认使用相邻 `../AUTO-MAS`，也可通过 `AUTO_MAS_REPO` 指定目录。日常启动、构建和验证无需运行这两条命令。
+`npm run compile` 只编译全部运行资源，`npm run build:app` 编译应用和兼容层，`npm run build:preview` 编译 MAS 预览。JS/CJS 都是构建产物，不作为源码维护，也不提交到 Git。
+
+应用、预览和便携 ZIP 都先在全新暂存目录构建，避免把已删除源码的旧产物继续打包。复制到 `dist/MAS创作工具箱` 时不会清理其中已有的个人 `data/`；便携 ZIP 只包含此次暂存目录的内容。
+
+仅在维护上游快照时，`npm run update:compat` 从 AUTO-MAS 的 `upstream/dev` 更新兼容层 TS 和配套类型，`npm run update:preview` 更新 MAS 布局与主页组件。它们默认使用相邻 `../AUTO-MAS`，也可通过 `AUTO_MAS_REPO` 指定目录。日常启动、构建和验证只使用本仓库保存的源码，无需相邻仓库，也不会更新快照。
 
 ## 目录
 
-- `app/`：Electron 主进程、主题编辑器、AI 接口和完整运行资源。
-- `app/mascot-tool/`：合并的桌宠工具源码。
-- `app/compat/`：MAS 主题/桌宠校验代码及原始 TypeScript。
+- `src/`：Electron、主题编辑器、AI 接口与桌宠工具的 TypeScript 源码；Node 模块使用 `.cts`（CommonJS TypeScript）。
+- `src/types/`：主题、桌宠、素材库和窗口 API 的类型；`src/ipc.ts` 统一声明 IPC 通道及请求/返回契约。
+- `src/compat/`：MAS 主题/桌宠校验模块的 TS 快照及来源记录。
+- `app/`：HTML、CSS、应用元数据与许可证等静态资源。
 - `preview-src/`：MAS 预览源码、复用组件与来源参考。
-- `app/mas-preview/`：已构建的预览运行资源，首次启动可直接使用。
-- `verify*.cjs`：本地验证脚本。
+- `.build/app/`：自动生成的运行目录；包含兼容层 JS、浏览器 JS 和预览资源。
+- `*.cts`：开发、构建、发布及本地验证脚本，由 Node 内置的类型擦除执行。
+- `tools/`、`tests/`：构建与验证辅助工具、纯逻辑回归和类型约束反例。
 - `guide.md`、`docs/images/`：图文操作指南及界面截图。
 - `使用说明.txt`、示例 ZIP：工具用法和示例资源。
 
@@ -76,13 +82,19 @@ npm run build
 npm test
 ```
 
-验证默认使用仓库附带的示例主题与桌宠。设置 `THEME_FIXTURE` 后，主题往返检查也可使用其他兼容的主题 ZIP。AI 检查使用本地模拟服务，不消耗实际 API 额度。
+`npm test` 会先执行 `npm run quality`（类型、Lint、格式）和完整编译，再使用仓库附带的示例主题与桌宠验证。Node、浏览器与 Vue 预览使用独立类型环境；维护/验证脚本保留动态测试回调的隐式类型推断。`tests/types-*.ts` 确保错误 IPC 返回值、错误 DOM 类型及跨环境全局变量会被拒绝。`preview-src/source-reference/` 与 `src/compat/` 保留上游快照格式，不参与格式改写。
+
+全部检查入口都通过统一运行器，在 `qa/verify-run-*/` 下为每个检查准备独立数据、素材与报告，不依赖之前运行过其他检查，也不改写个人草稿、素材库和示例 ZIP。可以单独运行 `npm run check:ai`、`npm run check:icons`、`npm run check:drafts` 或 `npm run check:quality`。请使用这些 npm 命令，不直接运行底层验证脚本。设置 `THEME_FIXTURE` 后，主题往返检查也可使用其他兼容主题 ZIP。AI 检查使用本地模拟服务，不消耗实际 API 额度。
+
+草稿读取会校验结构，未带版本的旧草稿在内存中补齐生成设置，保留未完成编辑的名称与标识。无法读取的草稿不会在读取时改写；之后保存或退出时，先将损坏原文保存在同一数据目录的 `draft-backups/` 再写新草稿。超过 48 MB 的原草稿需要先手动备份或移走。
+
+`npm run format` 统一格式，`npm run format:check` 只检查；`npm run lint` 检查应用和预览 TS 中未处理的 Promise 等问题。
 
 打包后可运行 `npm run check:packaged`，验证便携版 EXE 的主题编辑、桌宠工具和 AI 接口流程。
 
 ## 持续集成
 
-向 `main` 推送或提交以 `main` 为目标的 PR 时，GitHub Actions 会在 Windows 上安装锁定依赖、构建 MAS 预览、运行源码回归、打包并验证便携版 EXE。也可在 Actions 页面手动运行。
+向 `main` 推送或提交以 `main` 为目标的 PR 时，GitHub Actions 会在 Windows 上安装锁定依赖、检查全部类型、编译应用与兼容层及 MAS 预览、运行源码回归、打包并验证便携版 EXE。也可在 Actions 页面手动运行。
 
 成功后，运行页面的 Artifacts 提供 `MAS-Theme-Studio-Windows-x64` 下载，保留 14 天；失败时截图与 JSON 报告保留 7 天。CI 不需要生图 API Key。
 

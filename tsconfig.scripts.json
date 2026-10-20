@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "allowImportingTsExtensions": true,
+    "strictNullChecks": true,
+    "noImplicitAny": false,
+    "types": ["node"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "useUnknownInCatchVariables": false,
+    "module": "Node16",
+    "moduleResolution": "Node16"
+  },
+  "include": ["*.cts", "*.mts", "tools/**/*.mts", "tests/**/*.mts", "src/types/**/*.d.ts"]
+}

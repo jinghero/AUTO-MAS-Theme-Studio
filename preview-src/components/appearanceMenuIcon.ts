@@ -5,7 +5,7 @@ import type { AppearanceMenuIconKey, AppearanceMenuIcons } from '@/types/appeara
 export function createAppearanceMenuIcon(
   key: AppearanceMenuIconKey,
   fallback: Component,
-  menuIcons: AppearanceMenuIcons | undefined
+  menuIcons: AppearanceMenuIcons | undefined,
 ): VNode {
   const url = menuIcons?.[key] || menuIcons?.default
   if (!url) return h(fallback)

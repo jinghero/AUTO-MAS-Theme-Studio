@@ -126,7 +126,7 @@ const closeRefreshTip = () => {
   refreshTipOpen.value = false
 }
 
-watch(refreshTipOpen, open => {
+watch(refreshTipOpen, (open) => {
   if (open) {
     // 主页内容区的滚动不会冒泡到 window，只能靠捕获阶段拿
     window.addEventListener('scroll', closeRefreshTip, true)
@@ -144,7 +144,7 @@ const onRefreshGreeting = () => {
 
 const selectedTaskIds = computed({
   get: () => props.selectedTaskIds,
-  set: value => emit('update:selectedTaskIds', value),
+  set: (value) => emit('update:selectedTaskIds', value),
 })
 
 const { themeColor, themeColors } = useTheme()

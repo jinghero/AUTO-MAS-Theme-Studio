@@ -170,7 +170,7 @@ const selectedKeys = computed(() => {
   const path = route.path
   const matched = flatItems.value
     .filter(hasMenuKey)
-    .filter(item => {
+    .filter((item) => {
       const key = String(item.key)
       return path === key || path.startsWith(`${key}/`)
     })
@@ -178,7 +178,7 @@ const selectedKeys = computed(() => {
   return [matched?.key || '/home']
 })
 
-const onMenuClick: MenuProps['onClick'] = info => {
+const onMenuClick: MenuProps['onClick'] = (info) => {
   const target = String(info.key)
 
   // 检查路由是否被锁定
@@ -196,7 +196,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
     router.addRoute({
       path: '/update-download-dev',
       name: 'UpdateDownloadDev',
-      component: () => import('@/views/UpdateDownloadDev.vue'),
+      component: () => import('@/ComponentPreview.vue'),
       meta: { title: t('comp.updateDownloadTest'), skipGuard: true },
     })
   }
