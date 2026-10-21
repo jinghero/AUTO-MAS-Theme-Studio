@@ -29,6 +29,7 @@ async function build() {
     for (const name of ['使用说明.txt', 'guide.md', '示例主题-林间来信.zip', '示例桌宠.zip'])
       fs.copyFileSync(path.join(root, name), path.join(output, name))
     fs.cpSync(path.join(root, 'docs'), path.join(output, 'docs'), { recursive: true })
+    fs.copyFileSync(path.join(root, '.build/guide/guide.html'), path.join(output, 'guide.html'))
     fs.copyFileSync(path.join(root, 'app/LICENSE'), path.join(output, 'LICENSE-AGPL-3.0.txt'))
     fs.copyFileSync(
       path.join(root, '.build/app/node_modules/adm-zip/LICENSE'),

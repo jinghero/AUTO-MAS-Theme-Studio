@@ -42,6 +42,7 @@ let window: BrowserWindow,
 let generationController: AbortController | null
 let descriptionController: AbortController | null
 let mascotWindow: BrowserWindow | null
+let guideWindow: BrowserWindow | null
 const rendererURL = pathToFileURL(path.join(__dirname, 'index.html')).href
 const mascotURL = pathToFileURL(path.join(__dirname, 'mascot-tool/index.html')).href
 function handler<K extends Channel>(channel: K, callback: Handler<K>) {
@@ -67,7 +68,45 @@ handler('studio:library-list', (input) => imageLibrary.list(input))
 handler('studio:library-read', (input) => imageLibrary.read(input?.id))
 handler('studio:library-references', (input) => imageLibrary.readReferences(input?.id))
 handler('studio:guide', async () => {
-  await shell.openExternal('https://github.com/jinghero/AUTO-MAS-Theme-Studio/blob/main/guide.md')
+  if (guideWindow && !guideWindow.isDestroyed()) {
+    guideWindow.show()
+    guideWindow.focus()
+    return {}
+  }
+  const guideFile = app.isPackaged
+    ? path.join(path.dirname(app.getPath('exe')), 'guide.html')
+    : path.join(developmentRoot, '.build/guide/guide.html')
+  if (!fs.existsSync(guideFile)) throw new Error('本地使用指南缺失，请重新完整解压便携包')
+  const opened = new BrowserWindow({
+    parent: window,
+    width: 1100,
+    height: 850,
+    title: '使用说明 · MAS 主题工坊',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      javascript: false,
+    },
+  })
+  guideWindow = opened
+  opened.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  opened.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault()
+    if (url.startsWith('https:')) void shell.openExternal(url).catch(() => {})
+  })
+  opened.once('ready-to-show', () => opened.show())
+  opened.on('closed', () => {
+    if (guideWindow === opened) guideWindow = null
+  })
+  try {
+    await opened.loadFile(guideFile)
+  } catch (error) {
+    opened.destroy()
+    throw error
+  }
   return {}
 })
 handler('studio:library-folder', async () => {
@@ -267,6 +306,7 @@ handler('studio:close', () => {
   generationController?.abort('user')
   descriptionController?.abort('user')
   mascotWindow?.close()
+  guideWindow?.close()
   readyToClose = true
   window.close()
   return {}
