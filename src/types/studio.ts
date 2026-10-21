@@ -109,6 +109,7 @@ export interface IconResult {
   error?: string
   libraryId?: string
   archiveSource?: GeneratedImage
+  previewSource?: GeneratedImage
   libraryError?: string
   referenceImages?: ReferenceImage[]
   target?: Target
@@ -119,6 +120,7 @@ export interface AssetBatch {
   kind: 'icon-batch' | 'cursor-batch'
   target: 'icon' | 'cursor'
   referenceCount: number
+  inputFingerprint?: string
   items: IconResult[]
   libraryError?: undefined
 }

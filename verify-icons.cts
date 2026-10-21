@@ -292,11 +292,14 @@ async function verify() {
     failAt = start + 1
     const homeCard = page.locator('#ai-icon-grid [data-icon="home"]'),
       previous = await homeCard.locator('img').getAttribute('src')
+    await page.locator('#ai-icon-prompt-home').fill('一座新修改的圆顶小屋')
     await homeCard.getByRole('button', { name: '重新生成主页图标', exact: true }).click()
     await idle()
     assert.equal(requests.length, start + 1)
     assert.equal(await homeCard.locator('img').getAttribute('src'), previous)
     assert((await homeCard.textContent())!.includes('fixture generation failed'))
+    assert(requests.at(-1).data.prompt.includes('一座新修改的圆顶小屋'))
+    await page.locator('#ai-icon-prompt-home').fill('一座圆顶小屋，屋顶有一片叶子')
     failAt = 0
     ok('单独重生成仅请求所选图标，失败后保留上一张结果和已归档图片')
     start = requests.length
@@ -328,6 +331,29 @@ async function verify() {
     assert.equal(await page.locator('#ai-icon-grid img').count(), 2)
     assert((await page.locator('#ai-status').textContent())!.includes('503'))
     assert((await page.locator('#ai-status').textContent())!.includes('繁忙'))
+    const batchStyle = await page.locator('#ai-style').inputValue()
+    for (const [selector, changed, original] of [
+      ['#ai-prompt', marker + '-另一个批次', marker + '-失败'],
+      ['#ai-style', '完全不同的画风', batchStyle],
+      ['#ai-icon-prompt-home', '完全不同的主体', '一座圆顶小屋，屋顶有一片叶子'],
+    ]) {
+      await page.locator(selector).fill(changed)
+      await page.locator('#ai-continue-icons').click()
+      await idle()
+      assert.equal(requests.length - start, 3)
+      assert((await page.locator('#ai-status').textContent())!.includes('恢复原输入'))
+      await page.locator(selector).fill(original)
+    }
+    await page.getByRole('button', { name: '移除参考图 2', exact: true }).click()
+    await page.locator('#ai-continue-icons').click()
+    await idle()
+    assert.equal(requests.length - start, 3)
+    assert((await page.locator('#ai-status').textContent())!.includes('恢复原输入'))
+    await page.getByRole('button', { name: '移除参考图 1', exact: true }).click()
+    await page.locator('#ai-reference-file').setInputFiles(refPaths)
+    await page.waitForFunction(
+      () => document.getElementById('ai-reference-count')?.textContent === '2 / 4',
+    )
     await page.locator('#ai-key').fill('')
     await page.evaluate(() => {
       ;(document.getElementById('ai-settings') as HTMLDetailsElement).open = false
@@ -357,6 +383,7 @@ async function verify() {
     assert.equal(requests.length - start, 13)
     assert.equal(await page.locator('#ai-icon-grid img').count(), 11)
     ok('503 服务繁忙和继续时 429 限流均明确提示，服务恢复后仅继续未完成项，不重复生成已完成图标')
+    ok('暂停后改变共同提示词、风格、专属主体或参考图会阻止混用输入，恢复原输入后可继续')
     library = await listing()
     const diskPrompt = marker + '-磁盘故障'
     blockArchive = {
@@ -610,11 +637,44 @@ async function verify() {
     assert((await page.locator('#ai-status').textContent())!.includes('429'))
     failAt = 0
     failStatus = 500
+    await page.evaluate(() => {
+      const fit = window.themeImages.fit
+      let failed = false
+      window.themeImages.fit = async (...args) => {
+        if (args[1] === 64 && !failed) {
+          failed = true
+          throw new Error('fixture cursor preview failed')
+        }
+        return fit(...args)
+      }
+    })
+    await page.locator('#ai-continue-icons').click()
+    await idle()
+    assert.equal(requests.length - start, 3)
+    assert((await page.locator('#ai-status').textContent())!.includes('仅重试预览'))
+    await page.waitForFunction(() =>
+      document.getElementById('draft-status')?.textContent?.startsWith('草稿已保存'),
+    )
+    const previewDraft = await page.evaluate(() => window.studio.loadDraft())
+    assert(
+      previewDraft.state.aiResult.items.find((item) => item.key === 'pointer').previewSource
+        .libraryId,
+    )
+    await application.close()
+    application = null
+    await launch()
+    await page.locator('[data-tab="ai"]').click()
+    await page.getByRole('button', { name: '重新生成手形指针光标', exact: true }).click()
+    await idle()
+    assert.equal(requests.length - start, 3)
+    assert.equal(await page.locator('#ai-icon-grid img').count(), 2)
+    await page.locator('#ai-key').fill(key)
     await page.locator('#ai-continue-icons').click()
     await idle()
     assert.equal(requests.length - start, 4)
     assert.equal(await page.locator('#ai-icon-grid img').count(), 3)
     assert(requests[start + 2].data.prompt.includes('叶片装饰的手形指针'))
+    ok('原图归档后预览失败会保存恢复来源，重启后无密钥重试预览，不重复发起付费请求')
     assert.equal(
       JSON.stringify(JSON.parse(await page.locator('#manifest-json').textContent())),
       JSON.stringify(oldManifest),
@@ -683,6 +743,43 @@ async function verify() {
     ok(
       '成组光标按独立提示词生成、限流后仅继续剩余项、勾选应用与菜单隔离、64 像素和热点校验、主题 ZIP 往返与重启补存保留光标用途',
     )
+    const legacyCursor = await page.evaluate(
+      (image) =>
+        window.studio.saveLibraryImage({
+          ...image.entry,
+          ...image.image,
+          cursorKey: '',
+          cursorSubject: '',
+          prompt: '旧版箭头光标提示词',
+          basePrompt: '',
+          thumbnail: image.image.url,
+        }),
+      restoredCursor,
+    )
+    assert(legacyCursor.success, legacyCursor.error)
+    await page.locator('#ai-cursor-batch').uncheck()
+    await page.selectOption('#ai-cursor-target', 'pointer')
+    await page.locator('#ai-cursor-batch').check()
+    await page.locator('#ai-library-jump').click()
+    await page
+      .locator(`[data-library-id="${legacyCursor.entry.id}"]`)
+      .getByRole('button', { name: '复用提示词', exact: true })
+      .click()
+    await page.waitForFunction(
+      () =>
+        (document.getElementById('ai-cursor-target') as HTMLSelectElement).value === 'default' &&
+        !(document.getElementById('ai-cursor-batch') as HTMLInputElement).checked,
+    )
+    assert.equal(await page.locator('#ai-cursor-target').inputValue(), 'default')
+    assert(!(await page.locator('#ai-cursor-batch').isChecked()))
+    start = requests.length
+    await page.locator('#ai-prompt').fill('x'.repeat(16000))
+    await page.locator('#ai-key').fill(key)
+    await page.locator('#ai-generate').click()
+    await idle()
+    assert.equal(requests.length, start)
+    assert((await page.locator('#ai-status').textContent())!.includes('含专属要求'))
+    ok('旧光标记录复用回退为单张默认箭头，过长的组合提示词在发送请求前明确拒绝')
     await application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].setSize(1000, 720),
     )

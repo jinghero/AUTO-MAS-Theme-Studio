@@ -152,12 +152,14 @@ function result(value: unknown): GeneratedImage | AssetBatch {
         ? {}
         : { bytes: number(item.bytes, '图标大小', 0, 8 * 1024 * 1024) }),
       ...(item.archiveSource === undefined ? {} : { archiveSource: generated(item.archiveSource) }),
+      ...(item.previewSource === undefined ? {} : { previewSource: generated(item.previewSource) }),
     }
   })
   return {
     kind: raw.kind === 'cursor-batch' ? 'cursor-batch' : 'icon-batch',
     target: raw.kind === 'cursor-batch' ? 'cursor' : 'icon',
     referenceCount: number(raw.referenceCount ?? 0, '参考图数量', 0, 4),
+    ...strings(raw, ['inputFingerprint']),
     items,
   }
 }

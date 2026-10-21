@@ -239,7 +239,10 @@ export const themeAI = (() => {
     $('ai-apply').textContent = `应用为${targets[result.target] || '主题背景'} ↗`
     $('ai-icon-key-field').hidden = result.target !== 'icon'
     if (result.iconKey) $('ai-icon-key').value = result.iconKey
-    if (result.cursorKey) $('ai-cursor-key').value = result.cursorKey
+    if (result.target === 'cursor')
+      $('ai-cursor-key').value = cursorSet.some((cursor) => cursor.key === result.cursorKey)
+        ? result.cursorKey!
+        : 'default'
     $('ai-cursor-key-field').hidden = result.target !== 'cursor'
     $('ai-result-note').textContent =
       result.target === 'cursor'
@@ -477,7 +480,12 @@ export const themeAI = (() => {
   async function generateBatch(keys?: string[]) {
     if (generating || describing || loadingReferences) return
     const apiKey = $('ai-key').value.trim()
-    if (!apiKey) {
+    const previous = hooks.getState().aiResult
+    const previewOnly =
+      keys &&
+      isBatch(previous) &&
+      previous.items.filter((item) => keys.includes(item.key)).every((item) => item.previewSource)
+    if (!apiKey && !previewOnly) {
       $('ai-settings').open = true
       $('ai-key').focus()
       generationError('请在工具里填写 API Key 后再继续生成')
@@ -487,7 +495,7 @@ export const themeAI = (() => {
     const config = structuredClone(settings()),
       owner = hooks.getState(),
       references = structuredClone(referenceImages)
-    if (!config.prompt?.trim()) {
+    if (!config.prompt?.trim() && !previewOnly) {
       generationError('请填写共同的风格提示词')
       return
     }
@@ -498,7 +506,7 @@ export const themeAI = (() => {
     }
     if (keys) {
       if (!isBatch(result) || result.target !== config.target) return
-      if (result.referenceCount && !references.length) {
+      if (result.referenceCount && !references.length && !previewOnly) {
         generationError('请重新添加参考图后再继续生成')
         return
       }
@@ -536,6 +544,33 @@ export const themeAI = (() => {
     }
     timer = setInterval(update, 1000)
     try {
+      if (!previewOnly) {
+        const inputFingerprint = Array.from(
+          new Uint8Array(
+            await crypto.subtle.digest(
+              'SHA-256',
+              new TextEncoder().encode(
+                JSON.stringify({
+                  style: config.style,
+                  prompts: result.items.map((item) => assetPrompt(config, item.key)),
+                  references: references.map((reference) => reference.url),
+                }),
+              ),
+            ),
+          ),
+          (byte) => byte.toString(16).padStart(2, '0'),
+        ).join('')
+        const redrawCompletedItem =
+          keys?.length === 1 && result.items.every((item) => item.status === 'ready')
+        if (
+          result.inputFingerprint &&
+          result.inputFingerprint !== inputFingerprint &&
+          !redrawCompletedItem
+        )
+          throw new Error('批次的提示词、风格或参考图已改变，请恢复原输入后继续，或开始新批次')
+        result.inputFingerprint = inputFingerprint
+        hooks.changed()
+      }
       for (const [index, item] of jobs.entries()) {
         if (run.cancelled || owner !== hooks.getState()) break
         run.position = index + 1
@@ -545,42 +580,52 @@ export const themeAI = (() => {
         renderResult()
         update()
         try {
-          const response = await window.studio.generate({
-            ...config,
-            target: result.target,
-            apiKey,
-            prompt: assetPrompt(config, item.key),
-            referenceImages: references,
-          })
-          if (!response.success) throw new Error(response.error)
-          const original: GeneratedImage = {
-            ...response.image,
-            ...(await themeImages.inspect(response.image.url, `生成的${unit}`)),
-            ...generationMetadata(config, item.key),
-            referenceImages: references,
+          let original = item.previewSource
+          let saved = true
+          if (!original) {
+            const response = await window.studio.generate({
+              ...config,
+              target: result.target,
+              apiKey,
+              prompt: assetPrompt(config, item.key),
+              referenceImages: references,
+            })
+            if (!response.success) throw new Error(response.error)
+            original = {
+              ...response.image,
+              ...(await themeImages.inspect(response.image.url, `生成的${unit}`)),
+              ...generationMetadata(config, item.key),
+              referenceImages: references,
+            }
+            item.previewSource = original
+            saved = await themeLibrary.save(original)
+            item.libraryId = original.libraryId
+            if (!saved) item.archiveSource = original
+            hooks.changed()
           }
-          const saved = await themeLibrary.save(original)
           if (owner !== hooks.getState()) break
-          const url = await themeImages.fit(
-              response.image.url,
-              result.target === 'cursor' ? 64 : 128,
-            ),
+          original.libraryId ||= item.libraryId
+          const url = await themeImages.fit(original.url, result.target === 'cursor' ? 64 : 128),
             info = await themeImages.inspect(url, `生成的${unit}`)
           if (owner !== hooks.getState()) break
           Object.assign(item, info, { url, status: 'ready', libraryId: original.libraryId })
-          if (!saved) item.archiveSource = original
+          delete item.previewSource
           hooks.changed()
           renderResult()
           if (!saved) break
         } catch (error) {
-          item.status = item.url ? 'ready' : 'error'
+          item.status = item.url && !item.previewSource ? 'ready' : 'error'
           if (!run.cancelled) {
             failure = errorMessage(error)
+            if (item.previewSource)
+              failure = `预览处理失败：${failure}；原图已保留，继续时仅重试预览`
             item.error = failure
           }
           break
         }
       }
+    } catch (error) {
+      failure = errorMessage(error)
     } finally {
       clearInterval(timer)
       generating = false
@@ -588,7 +633,8 @@ export const themeAI = (() => {
       $('ai-cancel').hidden = true
       if (owner === hooks.getState()) {
         for (const item of result.items)
-          if (item.status === 'generating') item.status = item.url ? 'ready' : 'pending'
+          if (item.status === 'generating')
+            item.status = item.previewSource ? 'error' : item.url ? 'ready' : 'pending'
         const ready = result.items.filter((item) => item.url).length,
           remaining = result.items.filter((item) => item.status !== 'ready').length
         $('ai-status').className = remaining ? 'validation' : 'validation success'
@@ -739,12 +785,14 @@ export const themeAI = (() => {
           config.iconPrompts[entry.iconKey!] = entry.iconSubject
         }
       }
-      if (entry.target === 'cursor' && cursorSet.some((cursor) => cursor.key === entry.cursorKey)) {
-        config.cursorKey = entry.cursorKey!
+      if (entry.target === 'cursor') {
+        config.cursorKey = cursorSet.some((cursor) => cursor.key === entry.cursorKey)
+          ? entry.cursorKey!
+          : 'default'
         config.cursorBatch = false
         if (entry.cursorSubject) {
           config.cursorPrompts ||= {}
-          config.cursorPrompts[entry.cursorKey!] = entry.cursorSubject
+          config.cursorPrompts[config.cursorKey] = entry.cursorSubject
         }
       }
       clearSuggestion()
@@ -999,7 +1047,7 @@ export const themeAI = (() => {
         ...source,
         target,
         ...(target === 'cursor'
-          ? { cursorKey: source.cursorKey || image.key }
+          ? { cursorKey: source.cursorKey || image.key || 'default' }
           : { iconKey: source.iconKey || image.key }),
       }
       const saved = await themeLibrary.save(candidate as GeneratedImage)

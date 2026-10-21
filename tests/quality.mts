@@ -135,6 +135,14 @@ test('complete prompt plans require every purpose, menu icon and cursor', () => 
     assert.throws(() => parsePromptPlan(invalid))
 })
 
+test('composed menu and cursor prompts reserve room for their exclusive requirements', () => {
+  for (const target of ['icon', 'cursor'] as const)
+    assert.throws(
+      () => assetPrompt({ ...defaults, target, prompt: 'x'.repeat(16000) }, 'default'),
+      /完整提示词（含专属要求）超过 16000 字/,
+    )
+})
+
 test('independent purpose drafts and cursor batch metadata survive serialization without secrets', () => {
   const config = { ...defaults, prompt: '背景专属提示词' }
   rememberTargetPrompt(config)
@@ -159,7 +167,23 @@ test('independent purpose drafts and cursor batch metadata survive serialization
     aiResult: {
       kind: 'cursor-batch',
       target: 'cursor',
-      items: [{ key: 'text', label: '文本光标', status: 'pending' }],
+      inputFingerprint: 'a'.repeat(64),
+      items: [
+        {
+          key: 'text',
+          label: '文本光标',
+          status: 'error',
+          previewSource: {
+            target: 'cursor',
+            cursorKey: 'text',
+            url: png,
+            width: 32,
+            height: 32,
+            bytes: 20,
+            libraryId: 'b'.repeat(64),
+          },
+        },
+      ],
       referenceCount: 0,
     },
   }
@@ -169,6 +193,11 @@ test('independent purpose drafts and cursor batch metadata survive serialization
   assert.equal(restored.generator?.targetPrompts?.cursor?.style, '光标独立风格')
   assert.equal(restored.generator?.targetPrompts?.cover?.prompt, '')
   assert.equal(restored.aiResult?.kind, 'cursor-batch')
+  assert.equal(restored.aiResult?.kind && restored.aiResult.inputFingerprint, 'a'.repeat(64))
+  assert.equal(
+    restored.aiResult?.kind && restored.aiResult.items[0].previewSource?.libraryId,
+    'b'.repeat(64),
+  )
   assert(!serialized.includes('do-not-save') && !serialized.includes('nested-private-key'))
 })
 

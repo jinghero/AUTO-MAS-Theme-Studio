@@ -47,15 +47,28 @@ export function rememberTargetPrompt(config: GeneratorSettings) {
 }
 const referenceGuidance =
   '有参考图时，提取实际可见的主辅色、轮廓笔触、材质与代表性纹样，简化后应用到当前主体的具体部位；不直接复制整张参考画面，不臆造不可见细节。无参考图时按共同风格绘制。'
+function composedPrompt(prompt: string, label: string) {
+  if (prompt.trim().length > 16000)
+    throw new Error(
+      `${label}的完整提示词（含专属要求）超过 16000 字，请缩短共同提示词或该项专属提示词`,
+    )
+  return prompt
+}
 export function iconPrompt(config: GeneratorSettings, key: string) {
   const icon = iconSet.find((item) => item.key === key)!
-  return `${config.prompt}\n\n本次只绘制「${icon.label}」的单个图标。用途：${icon.purpose}。\n专属要求：${config.iconPrompts?.[key]?.trim() || icon.subject}。\n参考特征：${referenceGuidance}\n构图与辨识：主体居中约占画布七成，四周约15%留白，关键部件分离清楚，缩小至24像素仍可识别；沿用共同画风和线条粗细，透明背景。不要图标合集、其他菜单的符号、文字、字母或水印。`
+  return composedPrompt(
+    `${config.prompt}\n\n本次只绘制「${icon.label}」的单个图标。用途：${icon.purpose}。\n专属要求：${config.iconPrompts?.[key]?.trim() || icon.subject}。\n参考特征：${referenceGuidance}\n构图与辨识：主体居中约占画布七成，四周约15%留白，关键部件分离清楚，缩小至24像素仍可识别；沿用共同画风和线条粗细，透明背景。不要图标合集、其他菜单的符号、文字、字母或水印。`,
+    icon.label,
+  )
 }
 export function assetPrompt(config: GeneratorSettings, key: string) {
   if (config.target === 'icon') return iconPrompt(config, key)
   if (config.target !== 'cursor') return config.prompt || ''
   const cursor = cursorSet.find((item) => item.key === key)!
-  return `${config.prompt}\n\n本次只绘制「${cursor.label}」，用途：${cursor.purpose}。\n专属要求：${config.cursorPrompts?.[key]?.trim() || cursor.subject}。\n参考特征：${referenceGuidance}\n构图与辨识：保持当前光标的功能轮廓和朝向，装饰不遮挡尖端或中心；单个光标居中，四周少量透明留白，透明背景，缩小至32像素仍轮廓连贯。不要其他光标、合集、文字、热点标记或背景。`
+  return composedPrompt(
+    `${config.prompt}\n\n本次只绘制「${cursor.label}」，用途：${cursor.purpose}。\n专属要求：${config.cursorPrompts?.[key]?.trim() || cursor.subject}。\n参考特征：${referenceGuidance}\n构图与辨识：保持当前光标的功能轮廓和朝向，装饰不遮挡尖端或中心；单个光标居中，四周少量透明留白，透明背景，缩小至32像素仍轮廓连贯。不要其他光标、合集、文字、热点标记或背景。`,
+    cursor.label,
+  )
 }
 export function generationMetadata(config: GeneratorSettings, key: string) {
   return {
