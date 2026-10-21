@@ -46,6 +46,46 @@ async function verify() {
     await page.waitForFunction(() =>
       Boolean((document.getElementById('name') as HTMLInputElement)?.value),
     )
+    const externalCalls: string[] = []
+    await application.evaluate(({ shell }) => {
+      const original = shell.openExternal
+      ;(globalThis as any).guideExternalCalls = []
+      ;(globalThis as any).restoreGuideExternal = () => {
+        shell.openExternal = original
+      }
+      shell.openExternal = async (url) => {
+        ;(globalThis as any).guideExternalCalls.push(url)
+      }
+    })
+    await application.context().setOffline(true)
+    const guideOpened = application.waitForEvent('window')
+    await page.locator('#help').click()
+    const guide = await guideOpened
+    await guide.locator('h1').waitFor()
+    assert(guide.url().startsWith('file:') && guide.url().endsWith('/guide.html'))
+    await guide.waitForFunction(
+      () =>
+        document.images.length === 7 &&
+        [...document.images].every((image) => image.complete && image.naturalWidth > 0),
+    )
+    assert.equal(await guide.evaluate(() => typeof window.studio), 'undefined')
+    assert((await guide.locator('body').textContent())!.includes('本地指南'))
+    await page.locator('#help').click()
+    assert.equal(application.windows().length, 2)
+    externalCalls.push(
+      ...(await application.evaluate(() => (globalThis as any).guideExternalCalls)),
+    )
+    assert.deepEqual(externalCalls, [])
+    await guide.screenshot({
+      path: path.join(qa, packaged ? 'guide-local-portable.png' : 'guide-local.png'),
+      fullPage: false,
+    })
+    await guide.close()
+    await application.context().setOffline(false)
+    await application.evaluate(() => {
+      ;(globalThis as any).restoreGuideExternal()
+    })
+    ok('断网打开本地指南和全部 7 张截图，重复点击复用窗口，不打开外部网页或暴露编辑器接口')
     const generated = await page.evaluate(() => {
       function image(width, height, draw) {
         const canvas = document.createElement('canvas')

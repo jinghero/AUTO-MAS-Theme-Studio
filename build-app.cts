@@ -84,6 +84,8 @@ async function build() {
     const vendor = path.join(output, 'node_modules/adm-zip')
     fs.mkdirSync(path.dirname(vendor), { recursive: true })
     fs.cpSync(path.dirname(require.resolve('adm-zip')), vendor, { recursive: true })
+    const { buildGuide } = await import('./tools/guide.mts')
+    buildGuide(root)
     publishGenerated(root, output, path.join(root, '.build/app'))
     console.log('Built application and compatibility snapshot in .build/app')
   } catch (error) {
