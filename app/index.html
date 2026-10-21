@@ -70,6 +70,12 @@
           <details id="ai-icon-prompts"><summary>图标用途与专属提示词（可逐项修改）</summary><div id="ai-icon-prompt-list"></div></details>
           <p id="ai-icon-batch-hint" class="hint" hidden>10 个正式菜单加 1 个默认图标，共用画风与原参考图，每个图标单独生成、分别计费。失败或取消后保留已生成的图片，可继续未完成项。</p>
         </section>
+        <section id="ai-cursor-settings" class="ai-icon-settings" hidden>
+          <label class="checkbox-field"><input id="ai-cursor-batch" type="checkbox">批量生成整套鼠标光标（3 张）</label>
+          <label id="ai-cursor-single-field" class="field">本次光标用途<select id="ai-cursor-target"></select></label>
+          <details><summary>光标用途与专属提示词（可逐项修改）</summary><div id="ai-cursor-prompt-list"></div></details>
+          <p class="hint">默认箭头、手形指针与文本光标，共用画风与原参考图，逐项请求并计费。失败后可继续未完成项，应用时缩小至 64 像素以内，热点可在图片素材中调整。</p>
+        </section>
         <section class="ai-references" aria-label="参考图">
           <div class="prompt-heading"><span>参考图（可选）</span><span id="ai-reference-count">0 / 4</span></div>
           <div id="ai-reference-list" class="ai-reference-list"></div>
@@ -84,18 +90,25 @@
               <label class="field">看图 API Key<input id="ai-vision-key" type="password" autocomplete="off" placeholder="填写看图服务的 API Key" spellcheck="false"><small>仅本次运行使用，不写入草稿或主题包</small></label>
             </div>
           </details>
-          <div class="ai-actions"><button id="ai-describe" class="button secondary full" type="button" disabled>根据参考图生成提示词</button><button id="ai-describe-cancel" class="button secondary" type="button" hidden>取消</button></div>
-          <p class="hint">点击时会将参考图与用途要求发送到看图服务，由服务商计费。生成结果可先编辑、再使用。</p>
+          <div class="ai-actions"><button id="ai-describe" class="button secondary full" type="button" disabled>根据参考图生成整套提示词</button><button id="ai-describe-cancel" class="button secondary" type="button" hidden>取消</button></div>
+          <p class="hint">一次生成五类用途的灵感风格与提示词，以及 11 个菜单图标和 3 个鼠标光标的专属提示词。会将参考图发送到看图服务，由服务商计费；可先编辑，再统一使用。</p>
           <p id="ai-describe-status" class="validation" role="status"></p>
         </section>
         <label class="field">灵感与风格<input id="ai-style" maxlength="800" placeholder="例如：森林、奶油绿、柔和手绘"><small>用于套用内置提示词；你也可以直接编辑下方提示词</small></label>
         <div class="prompt-heading"><label for="ai-prompt">提示词</label><button id="ai-reset-prompt" class="text-button">套用内置提示词 ↻</button></div>
         <textarea id="ai-prompt" rows="10" maxlength="16000" spellcheck="false"></textarea>
+        <p class="hint">菜单图标、光标的 16000 字上限包含自动追加的专属要求，过长时请缩短共同或专属提示词。</p>
         <section id="ai-prompt-suggestion" class="ai-prompt-suggestion" hidden>
-          <label class="field">生成的候选提示词<textarea id="ai-suggested-prompt" rows="8" maxlength="16000" spellcheck="false"></textarea><small>可先编辑，使用后替换上方提示词。</small></label>
-          <div class="ai-actions"><button id="ai-use-prompt" class="button primary full" type="button">使用此提示词</button><button id="ai-discard-prompt" class="button secondary" type="button">放弃</button></div>
+          <h3>整套主题 · 候选提示词</h3>
+          <label class="field">查看与编辑用途<select id="ai-suggested-target"><option value="background">主题背景</option><option value="cover">主题封面</option><option value="icon">菜单图标</option><option value="mascot">静态桌宠</option><option value="cursor">鼠标光标</option></select></label>
+          <label class="field">候选灵感与风格<textarea id="ai-suggested-style" rows="3" maxlength="800" spellcheck="false"></textarea></label>
+          <label class="field">候选提示词<textarea id="ai-suggested-prompt" rows="8" maxlength="16000" spellcheck="false"></textarea></label>
+          <details id="ai-suggested-icons" hidden><summary>11 个图标专属提示词</summary><div id="ai-suggested-icon-prompts"></div></details>
+          <details id="ai-suggested-cursors" hidden><summary>3 个光标专属提示词</summary><div id="ai-suggested-cursor-prompts"></div></details>
+          <p class="hint">可切换用途逐项编辑。使用后统一替换全部用途的灵感风格、提示词及图标、光标的专属提示词，切换用途和重启后仍会保留。</p>
+          <div class="ai-actions"><button id="ai-use-prompt" class="button primary full" type="button">使用整套提示词</button><button id="ai-discard-prompt" class="button secondary" type="button">放弃</button></div>
         </section>
-        <label class="field ai-size-field">生成尺寸<input id="ai-size" list="ai-sizes" placeholder="1536x1024" spellcheck="false"><datalist id="ai-sizes"><option value="1536x1024"><option value="1024x1024"><option value="1024x1536"><option value="auto"></datalist></label>
+        <label class="field ai-size-field">生成尺寸<input id="ai-size" list="ai-sizes" placeholder="1536x1024" spellcheck="false"><datalist id="ai-sizes"><option value="1536x1024" label="横图"><option value="1024x1024" label="方图"><option value="1024x1536" label="竖图"><option value="1920x1080" label="1080p 横屏 · 16:9"><option value="1080x1920" label="1080p 竖屏 · 9:16"><option value="3840x2160" label="4K 横屏 · 16:9"><option value="2160x3840" label="4K 竖屏 · 9:16"><option value="auto" label="由模型自动决定"></datalist><small>可选择常见尺寸或手动输入宽x高，实际支持以所选模型为准；生成图片不超过 8 MB。</small></label>
         <details class="ai-advanced"><summary>高级选项（按服务商支持情况设置）</summary><label class="field">生成质量<select id="ai-quality"><option value="">使用服务商默认值</option><option value="auto">auto</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="standard">standard（兼容服务）</option><option value="hd">hd（兼容服务）</option></select></label><label class="field">返回格式<select id="ai-response-format"><option value="">自动（不额外传参数）</option><option value="b64_json">b64_json（兼容服务）</option><option value="url">url（兼容服务）</option></select></label><label class="checkbox-field"><input id="ai-transparent" type="checkbox">请求透明背景（接口需支持）</label></details>
         <div class="tip ai-tip"><span>✦</span><p>每个请求生成 1 张图片，整套图标会逐项请求，由你的服务商计费。成功图片自动存入本地素材库；生成时会发送提示词和已选参考图。</p></div>
         <div class="ai-actions"><button id="ai-generate" class="button primary full">✦ 生成图片</button><button id="ai-cancel" class="button secondary" hidden>取消</button></div>
@@ -127,9 +140,9 @@
       <div class="workspace-top"><div><span class="eyebrow">LIVE PREVIEW</span><h2>你的主题，正在成形</h2></div><span class="preview-label">视觉示意</span></div>
       <div id="ai-result-panel" class="ai-result-panel" hidden>
         <section id="ai-icon-results" class="ai-icon-results" hidden>
-          <h2>菜单图标 · 同一套风格</h2><p id="ai-icon-summary" class="hint"></p><div id="ai-icon-grid" class="ai-icon-grid"></div>
+          <h2 id="ai-batch-title">菜单图标 · 同一套风格</h2><p id="ai-icon-summary" class="hint"></p><div id="ai-icon-grid" class="ai-icon-grid"></div>
           <div class="ai-result-buttons"><button id="ai-apply-icons" class="button primary">应用已选图标</button><button id="ai-continue-icons" class="button secondary" hidden>继续生成未完成项</button><button id="ai-archive-icons" class="button secondary" hidden>重试保存到素材库</button></div>
-          <p class="hint">先检查每个图标再应用。勾选要使用的图片，也可单独重新生成；应用只更新对应菜单。</p>
+          <p class="hint">勾选需要的图片后统一应用，也可单独重新生成。应用时只更新所选菜单图标或光标状态。</p>
         </section>
         <div id="ai-empty" class="ai-empty"><span>✦</span><h2>一张图片，一个新灵感。</h2><p>选好用途，填写服务信息后点击生成。<br>生成结果会出现在这里，应用前可以先预览。</p><div>背景 · 封面 · 图标 · 静态桌宠 · 光标</div></div>
         <div id="ai-result" hidden><div class="ai-image-wrap"><img id="ai-result-image" alt="AI 生成素材预览"></div><div class="ai-result-meta"><strong id="ai-result-title">生成的素材</strong><span id="ai-result-info"></span></div><div id="ai-target-keys"><label class="field" id="ai-icon-key-field" hidden>应用到菜单<select id="ai-icon-key"></select></label><label class="field" id="ai-cursor-key-field" hidden>应用到光标<select id="ai-cursor-key"><option value="default">默认箭头</option><option value="pointer">可点击元素</option><option value="text">文字选择</option></select></label></div><div class="ai-result-buttons"><button id="ai-apply" class="button primary">应用到主题</button><button id="ai-save-image" class="button secondary">保存图片</button></div><p id="ai-result-note" class="hint"></p></div>
@@ -156,7 +169,6 @@
   <footer class="app-footer"><span>本地制作 · 标准 theme.json 格式</span><span id="footer-assets">0 张图片</span><button id="help" class="text-button">使用说明</button></footer>
   <div id="toast" class="toast" role="status" hidden></div>
   <dialog id="confirm-dialog"><h2 id="confirm-title"></h2><p id="confirm-text"></p><div><button id="confirm-cancel" class="button secondary">取消</button><button id="confirm-ok" class="button primary">继续</button></div></dialog>
-  <dialog id="help-dialog"><h2>开始制作你的主题</h2><p>1. 填写名称和唯一标识，选择浅色或深色配色。</p><p>2. 在「配色与背景」导入背景并调整透明度。</p><p>3. 可在「AI 生图」填写兼容接口、模型和 API Key，用内置提示词生成素材，再应用到主题。</p><p>4. 按需添加封面、菜单图标、桌宠和鼠标光标。</p><p>5. 导出 ZIP，在 AUTO-MAS 的主题商店中导入并应用。</p><p>草稿自动保存在工具旁的 data 文件夹中（目录不可写时使用系统应用数据目录）。打开主题 ZIP 可继续修改；转移电脑前请先导出 ZIP。</p><p>图片最大 8 MB、宽高不超过 8192 像素；最终 ZIP 最大 16 MB、最多 31 张图片。动画桌宠请导入桌宠 ZIP，本工具会保留其动画。</p><p>本地编辑与导出可离线；AI 生图需要联网，由所填服务商计费。密钥仅当前运行使用。预览为视觉示意。程序未做代码签名。</p><button id="help-close" class="button primary">知道了</button></dialog>
   <input id="image-file" type="file" accept=".png,.jpg,.jpeg,.webp" hidden>
   <input id="theme-file" type="file" accept=".zip" hidden>
   <input id="mascot-file" type="file" accept=".zip" hidden>

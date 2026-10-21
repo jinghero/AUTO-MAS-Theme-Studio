@@ -5,6 +5,10 @@ const http = require('node:http') as typeof import('node:http')
 const { _electron: electron } = require('@playwright/test') as typeof import('@playwright/test')
 const { readPackage } =
   require('./.build/app/package-service.cjs') as typeof import('./src/package-service.cjs')
+const { targetKeys, templates } =
+  require('./.build/app/generation.js') as typeof import('./src/generation')
+const { iconSet } = require('./.build/app/icons.js') as typeof import('./src/icons')
+const { cursorSet } = require('./.build/app/cursors.js') as typeof import('./src/cursors')
 const root = __dirname,
   qa = path.join(root, 'qa'),
   output = path.join(root, 'docs/images')
@@ -29,6 +33,22 @@ const referenceFiles = [background, fixture.assets[fixture.manifest.mascot!.path
 )
 const prompt =
   '宁静的森林与柔和远山，以鼠尾草绿、奶油白为主色，温暖的手绘质感。主体在右侧，左侧与中间留出干净空间，适合覆盖导航与卡片。参考角色造型的圆润轮廓与森林配色，保持整体协调。无文字、标志、水印。'
+const plan = {
+  targets: Object.fromEntries(
+    targetKeys.map((target) => [
+      target,
+      {
+        style: '鼠尾草绿、奶油白、柔和森林手绘',
+        prompt:
+          target === 'background'
+            ? prompt
+            : `${templates[target]}\n\n风格：鼠尾草绿与奶油白配色、圆润轮廓和温暖手绘质感。`,
+      },
+    ]),
+  ),
+  iconPrompts: Object.fromEntries(iconSet.map((icon) => [icon.key, icon.subject])),
+  cursorPrompts: Object.fromEntries(cursorSet.map((cursor) => [cursor.key, cursor.subject])),
+}
 let address,
   icons: any[] = [],
   application
@@ -48,7 +68,9 @@ const server = http.createServer(async (request, response) => {
   response.writeHead(200, { 'Content-Type': 'application/json' })
   if (request.url!.endsWith('/chat/completions'))
     response.end(
-      JSON.stringify({ choices: [{ message: { content: prompt }, finish_reason: 'stop' }] }),
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(plan) }, finish_reason: 'stop' }],
+      }),
     )
   else {
     const icon = icons.find((icon) => data.prompt.includes(`「${icon.label}」`))

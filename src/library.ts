@@ -2,6 +2,7 @@ import { uiTask } from './async-ui'
 import { errorMessage } from './errors'
 import { themeImages } from './image-support'
 import { iconSet } from './icons'
+import { cursorSet } from './cursors'
 import type { LibraryHooks, GeneratedImage } from './types/studio'
 import { element as $ } from './dom'
 export const themeLibrary = (() => {
@@ -52,7 +53,9 @@ export const themeLibrary = (() => {
       name.textContent =
         entry.target === 'icon'
           ? iconSet.find((icon) => icon.key === entry.iconKey)?.label || targets.icon
-          : targets[entry.target]
+          : entry.target === 'cursor'
+            ? cursorSet.find((cursor) => cursor.key === entry.cursorKey)?.label || targets.cursor
+            : targets[entry.target]
       const info = document.createElement('p')
       info.className = 'hint'
       info.textContent = `${entry.width} × ${entry.height} · ${new Date(entry.createdAt).toLocaleString()}${entry.model ? ` · ${entry.model}` : ''} · ${entry.referencesStored ? `${entry.references.length} 张参考图` : '旧记录未保存参考图'}`

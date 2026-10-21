@@ -11,8 +11,12 @@ const { parseDraft, serializeDraft, parseLibraryEntry } =
   require('../.build/app/state.cjs') as typeof import('../src/state.cjs')
 const { newState, refPaths, prune, asset } =
   require('../.build/app/editor-state.js') as typeof import('../src/editor-state.js')
-const { iconPrompt, defaults } =
+const { iconPrompt, assetPrompt, defaults, targetKeys, rememberTargetPrompt } =
   require('../.build/app/generation.js') as typeof import('../src/generation.js')
+const { parsePromptPlan } =
+  require('../.build/app/prompt-plan.js') as typeof import('../src/prompt-plan.js')
+const { iconSet } = require('../.build/app/icons.js') as typeof import('../src/icons.js')
+const { cursorSet } = require('../.build/app/cursors.js') as typeof import('../src/cursors.js')
 const { createDraftQueue } =
   require('../.build/app/draft-queue.js') as typeof import('../src/draft-queue.js')
 const { uiTask } = require('../.build/app/async-ui.js') as typeof import('../src/async-ui.js')
@@ -36,7 +40,7 @@ test('versionless drafts retain incomplete edits and migrate generator defaults 
   assert.equal(Object.hasOwn(parsed.manifest.tokens, 'colorPageTitle'), false)
   assert.equal(parsed.generator?.prompt, '保留原提示词')
   assert.equal(parsed.generator?.visionSeparate, false)
-  assert(parsed.aiResult && parsed.aiResult.kind !== 'icon-batch')
+  assert(parsed.aiResult && parsed.aiResult.kind === undefined)
   assert.equal(parsed.aiResult.libraryId, undefined)
   assert(!serializeDraft(legacy).includes('do-not-save'))
   assert.equal(JSON.parse(serializeDraft(legacy)).draftVersion, 1)
@@ -111,6 +115,90 @@ test('icon prompts keep per-icon intent and do not mutate generation settings', 
   assert(iconPrompt(config, 'home').includes('专属房屋'))
   assert(iconPrompt(config, 'plans').includes('日历'))
   assert.deepEqual(config, before)
+})
+
+test('complete prompt plans require every purpose, menu icon and cursor', () => {
+  const plan = {
+    targets: Object.fromEntries(
+      targetKeys.map((target) => [target, { style: `${target}风格`, prompt: `${target}提示词` }]),
+    ),
+    iconPrompts: Object.fromEntries(iconSet.map((icon) => [icon.key, icon.subject])),
+    cursorPrompts: Object.fromEntries(cursorSet.map((cursor) => [cursor.key, cursor.subject])),
+  }
+  assert.deepEqual(parsePromptPlan(plan), plan)
+  for (const invalid of [
+    { ...plan, targets: {} },
+    { ...plan, iconPrompts: { ...plan.iconPrompts, home: '' } },
+    { ...plan, cursorPrompts: { ...plan.cursorPrompts, text: '' } },
+    { ...plan, cursorPrompts: [] },
+  ])
+    assert.throws(() => parsePromptPlan(invalid))
+})
+
+test('composed menu and cursor prompts reserve room for their exclusive requirements', () => {
+  for (const target of ['icon', 'cursor'] as const)
+    assert.throws(
+      () => assetPrompt({ ...defaults, target, prompt: 'x'.repeat(16000) }, 'default'),
+      /完整提示词（含专属要求）超过 16000 字/,
+    )
+})
+
+test('independent purpose drafts and cursor batch metadata survive serialization without secrets', () => {
+  const config = { ...defaults, prompt: '背景专属提示词' }
+  rememberTargetPrompt(config)
+  config.target = 'cursor'
+  config.style = '光标独立风格'
+  config.prompt = '光标独立提示词'
+  config.cursorPrompts = { pointer: '叶片手形' }
+  rememberTargetPrompt(config)
+  const before = structuredClone(config)
+  assert(assetPrompt(config, 'pointer').includes('叶片手形'))
+  assert.deepEqual(config, before)
+  const state = {
+    ...newState(),
+    generator: {
+      ...config,
+      apiKey: 'do-not-save',
+      targetPrompts: {
+        ...config.targetPrompts,
+        cover: { style: '封面风格', prompt: '', apiKey: 'nested-private-key' },
+      },
+    },
+    aiResult: {
+      kind: 'cursor-batch',
+      target: 'cursor',
+      inputFingerprint: 'a'.repeat(64),
+      items: [
+        {
+          key: 'text',
+          label: '文本光标',
+          status: 'error',
+          previewSource: {
+            target: 'cursor',
+            cursorKey: 'text',
+            url: png,
+            width: 32,
+            height: 32,
+            bytes: 20,
+            libraryId: 'b'.repeat(64),
+          },
+        },
+      ],
+      referenceCount: 0,
+    },
+  }
+  const serialized = serializeDraft(state)
+  const restored = parseDraft(JSON.parse(serialized) as unknown)
+  assert.equal(restored.generator?.targetPrompts?.background?.prompt, '背景专属提示词')
+  assert.equal(restored.generator?.targetPrompts?.cursor?.style, '光标独立风格')
+  assert.equal(restored.generator?.targetPrompts?.cover?.prompt, '')
+  assert.equal(restored.aiResult?.kind, 'cursor-batch')
+  assert.equal(restored.aiResult?.kind && restored.aiResult.inputFingerprint, 'a'.repeat(64))
+  assert.equal(
+    restored.aiResult?.kind && restored.aiResult.items[0].previewSource?.libraryId,
+    'b'.repeat(64),
+  )
+  assert(!serialized.includes('do-not-save') && !serialized.includes('nested-private-key'))
 })
 
 test('draft writes remain ordered, report only the latest save and recover after failure', async () => {

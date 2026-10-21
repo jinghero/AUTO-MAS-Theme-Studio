@@ -63,6 +63,18 @@ const tags = {
   'ai-prompt': 'textarea',
   'ai-prompt-suggestion': 'section',
   'ai-suggested-prompt': 'textarea',
+  'ai-suggested-target': 'select',
+  'ai-suggested-style': 'textarea',
+  'ai-suggested-icons': 'details',
+  'ai-suggested-icon-prompts': 'div',
+  'ai-suggested-cursors': 'details',
+  'ai-suggested-cursor-prompts': 'div',
+  'ai-cursor-settings': 'section',
+  'ai-cursor-batch': 'input',
+  'ai-cursor-single-field': 'label',
+  'ai-cursor-target': 'select',
+  'ai-cursor-prompt-list': 'div',
+  'ai-batch-title': 'h2',
   'ai-use-prompt': 'button',
   'ai-discard-prompt': 'button',
   'ai-size': 'input',
@@ -149,8 +161,6 @@ const tags = {
   'confirm-text': 'p',
   'confirm-cancel': 'button',
   'confirm-ok': 'button',
-  'help-dialog': 'dialog',
-  'help-close': 'button',
   'image-file': 'input',
   'theme-file': 'input',
   'mascot-file': 'input',
@@ -161,10 +171,12 @@ export function initializeElements() {
 }
 export function element<K extends ElementId>(id: K): HTMLElementTagNameMap[(typeof tags)[K]]
 export function element(id: `ai-icon-prompt-${string}`): HTMLTextAreaElement
+export function element(id: `ai-cursor-prompt-${string}`): HTMLTextAreaElement
 export function element(id: `text-${string}` | `color-${string}`): HTMLInputElement
 export function element(id: string): HTMLElement {
   if (id in tags) return requiredElement(id, tags[id as ElementId])
-  if (id.startsWith('ai-icon-prompt-')) return requiredElement(id, 'textarea')
+  if (id.startsWith('ai-icon-prompt-') || id.startsWith('ai-cursor-prompt-'))
+    return requiredElement(id, 'textarea')
   if (id.startsWith('text-') || id.startsWith('color-')) return requiredElement(id, 'input')
   throw new Error(`未知界面元素：${id}`)
 }

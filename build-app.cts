@@ -30,7 +30,9 @@ async function build() {
       entryPoints: [
         'errors',
         'generation',
+        'prompt-plan',
         'icons',
+        'cursors',
         'ipc',
         'editor-state',
         'draft-queue',

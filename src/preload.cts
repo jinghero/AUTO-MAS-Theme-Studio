@@ -17,6 +17,7 @@ const studio: StudioAPI = {
   readLibraryImage: (id) => invoke(studioChannels.readLibraryImage, { id }),
   readLibraryReferences: (id) => invoke(studioChannels.readLibraryReferences, { id }),
   openLibraryFolder: () => invoke(studioChannels.openLibraryFolder, undefined),
+  openGuide: () => invoke(studioChannels.openGuide, undefined),
   openMascotTool: (state) => invoke(studioChannels.openMascotTool, state),
   exportMascot: (state) => invoke(studioChannels.exportMascot, state),
   open: (input) => invoke(studioChannels.open, input),

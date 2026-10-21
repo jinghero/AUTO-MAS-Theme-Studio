@@ -1,7 +1,7 @@
 import type {
   GeneratedImage,
   GeneratorSettings,
-  IconBatch,
+  AssetBatch,
   IconResult,
   ImageMetadata,
   LibraryEntry,
@@ -11,8 +11,9 @@ import type {
   Target,
 } from './types/studio'
 import { validateAppearanceManifest } from './compat/appearanceService'
-import { defaults } from './generation'
+import { defaults, targetKeys } from './generation'
 import { iconSet } from './icons'
+import { cursorSet } from './cursors'
 
 type RecordValue = Record<string, unknown>
 function object(value: unknown, label: string): RecordValue {
@@ -64,7 +65,16 @@ function metadata(raw: RecordValue, fallback?: Target): Omit<ImageMetadata, 'byt
     target: choice(raw.target ?? fallback, targets, '素材用途'),
     width: number(raw.width, '图片宽度', 1, 8192),
     height: number(raw.height, '图片高度', 1, 8192),
-    ...strings(raw, ['iconKey', 'prompt', 'basePrompt', 'iconSubject', 'model', 'style']),
+    ...strings(raw, [
+      'iconKey',
+      'cursorKey',
+      'prompt',
+      'basePrompt',
+      'iconSubject',
+      'cursorSubject',
+      'model',
+      'style',
+    ]),
   }
 }
 function references(value: unknown): ReferenceMetadata[] {
@@ -118,10 +128,14 @@ function generated(value: unknown): GeneratedImage {
       : { referencesStored: boolean(raw.referencesStored, '参考图归档状态') }),
   }
 }
-function result(value: unknown): GeneratedImage | IconBatch {
+function result(value: unknown): GeneratedImage | AssetBatch {
   const raw = object(value, '生成结果')
   if (raw.kind === undefined) return generated(raw)
-  if (raw.kind !== 'icon-batch' || !Array.isArray(raw.items) || raw.items.length > 32)
+  if (
+    !['icon-batch', 'cursor-batch'].includes(String(raw.kind)) ||
+    !Array.isArray(raw.items) ||
+    raw.items.length > 32
+  )
     throw new Error('批量图标草稿无效')
   const items: IconResult[] = raw.items.map((value: unknown) => {
     const item = object(value, '图标结果')
@@ -130,7 +144,7 @@ function result(value: unknown): GeneratedImage | IconBatch {
       label: text(item.label, '图标名称'),
       status: choice(item.status, ['pending', 'generating', 'ready', 'error'], '图标状态'),
       selected: item.selected === undefined ? true : boolean(item.selected, '图标选择'),
-      ...strings(item, ['error', 'libraryId', 'libraryError', 'iconKey']),
+      ...strings(item, ['error', 'libraryId', 'libraryError', 'iconKey', 'cursorKey']),
       ...(item.url === undefined ? {} : { url: imageUrl(item.url) }),
       ...(item.width === undefined ? {} : { width: number(item.width, '图标宽度', 1, 8192) }),
       ...(item.height === undefined ? {} : { height: number(item.height, '图标高度', 1, 8192) }),
@@ -138,12 +152,14 @@ function result(value: unknown): GeneratedImage | IconBatch {
         ? {}
         : { bytes: number(item.bytes, '图标大小', 0, 8 * 1024 * 1024) }),
       ...(item.archiveSource === undefined ? {} : { archiveSource: generated(item.archiveSource) }),
+      ...(item.previewSource === undefined ? {} : { previewSource: generated(item.previewSource) }),
     }
   })
   return {
-    kind: 'icon-batch',
-    target: 'icon',
+    kind: raw.kind === 'cursor-batch' ? 'cursor-batch' : 'icon-batch',
+    target: raw.kind === 'cursor-batch' ? 'cursor' : 'icon',
     referenceCount: number(raw.referenceCount ?? 0, '参考图数量', 0, 4),
+    ...strings(raw, ['inputFingerprint']),
     items,
   }
 }
@@ -161,13 +177,22 @@ function generator(value: unknown): GeneratorSettings {
       'visionModel',
       'visionBaseURL',
       'iconKey',
+      'cursorKey',
       'prompt',
     ]),
   }
   settings.target = choice(raw.target ?? defaults.target, targets, '生成用途')
-  for (const key of ['transparent', 'visionSeparate', 'iconBatch'] as const)
+  for (const key of ['transparent', 'visionSeparate', 'iconBatch', 'cursorBatch'] as const)
     if (raw[key] !== undefined) settings[key] = boolean(raw[key], key)
   if (!iconSet.some((icon) => icon.key === settings.iconKey)) settings.iconKey = 'default'
+  if (!cursorSet.some((cursor) => cursor.key === settings.cursorKey)) settings.cursorKey = 'default'
+  if (raw.cursorPrompts !== undefined)
+    settings.cursorPrompts = Object.fromEntries(
+      Object.entries(object(raw.cursorPrompts, '光标提示词')).map(([key, value]) => [
+        key,
+        text(value, '光标提示词'),
+      ]),
+    )
   if (raw.iconPrompts !== undefined)
     settings.iconPrompts = Object.fromEntries(
       Object.entries(object(raw.iconPrompts, '图标提示词')).map(([key, value]) => [
@@ -175,6 +200,17 @@ function generator(value: unknown): GeneratorSettings {
         text(value, '图标提示词'),
       ]),
     )
+  if (raw.targetPrompts !== undefined) {
+    const prompts = object(raw.targetPrompts, '各用途提示词')
+    settings.targetPrompts = Object.fromEntries(
+      targetKeys
+        .filter((key) => prompts[key] !== undefined)
+        .map((key) => {
+          const item = object(prompts[key], '用途提示词')
+          return [key, { style: text(item.style, '灵感风格'), prompt: text(item.prompt, '提示词') }]
+        }),
+    )
+  }
   return settings
 }
 /** Versionless drafts are migrated in memory; editable IDs and names need not be export-ready. */

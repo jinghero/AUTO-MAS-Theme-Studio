@@ -15,6 +15,7 @@ import {
 import { themeAI } from './ai'
 import { themePreview } from './preview-host'
 import { iconSet } from './icons'
+import { cursorSet } from './cursors'
 import { themeImages } from './image-support'
 import type { StudioState, Target, Manifest, MenuIconKey } from './types/studio'
 import { element as $, initializeElements } from './dom'
@@ -449,24 +450,34 @@ import { element as $, initializeElements } from './dom'
     markChanged()
     toast(`图片已导入 · ${info.width} × ${info.height}`)
   }
-  async function importIcons(entries: { key: string; url: string }[]) {
-    if (!Array.isArray(entries) || !entries.length || entries.length > icons.length)
-      throw new Error('请先选择要应用的图标')
+  async function importBatch(entries: { key: string; url: string }[], target: 'icon' | 'cursor') {
+    const catalog = target === 'cursor' ? cursorSet : icons,
+      label = target === 'cursor' ? '鼠标光标' : '菜单图标',
+      maxSize = target === 'cursor' ? 64 : 128
+    if (!Array.isArray(entries) || !entries.length || entries.length > catalog.length)
+      throw new Error(`请先选择要应用的${label}`)
     const owner = state,
       originalManifest = JSON.stringify(state.manifest),
       candidate = structuredClone(state),
       keys = new Set()
-    candidate.manifest.menuIcons ||= {}
+    if (target === 'cursor') candidate.manifest.cursors ||= {}
+    else candidate.manifest.menuIcons ||= {}
     for (const { key, url } of entries) {
-      if (!icons.some((icon) => icon.key === key) || keys.has(key))
-        throw new Error('菜单图标用途无效或重复')
+      if (!catalog.some((item) => item.key === key) || keys.has(key))
+        throw new Error(`${label}用途无效或重复`)
       keys.add(key)
-      const info = await themeImages.inspect(url, '生成的菜单图标')
-      if (!url.startsWith('data:image/png;') || info.width > 128 || info.height > 128)
-        throw new Error('生成的菜单图标需为 128 像素以内的 PNG')
-      const name = `assets/ai-menu-${key}-${crypto.randomUUID().slice(0, 8)}.png`
+      const info = await themeImages.inspect(url, `生成的${label}`)
+      if (!url.startsWith('data:image/png;') || info.width > maxSize || info.height > maxSize)
+        throw new Error(`生成的${label}需为 ${maxSize} 像素以内的 PNG`)
+      const name = `assets/ai-${target === 'cursor' ? 'cursor' : 'menu'}-${key}-${crypto.randomUUID().slice(0, 8)}.png`
       candidate.assets[name] = url
-      candidate.manifest.menuIcons[key as MenuIconKey] = name
+      if (target === 'cursor')
+        candidate.manifest.cursors![key as 'default' | 'pointer' | 'text'] = {
+          path: name,
+          hotspotX: key === 'text' ? Math.floor(info.width / 2) : 0,
+          hotspotY: key === 'text' ? Math.floor(info.height / 2) : 0,
+        }
+      else candidate.manifest.menuIcons![key as MenuIconKey] = name
     }
     const used = new Set(refPaths(candidate.manifest).map((name) => name.toLowerCase()))
     for (const name of Object.keys(candidate.assets))
@@ -477,10 +488,11 @@ import { element as $, initializeElements } from './dom'
     if (JSON.stringify(state.manifest) !== originalManifest)
       throw new Error('主题素材已改变，请重新应用图标')
     state.assets = candidate.assets
-    state.manifest.menuIcons = candidate.manifest.menuIcons
+    if (target === 'cursor') state.manifest.cursors = candidate.manifest.cursors
+    else state.manifest.menuIcons = candidate.manifest.menuIcons
     renderForm()
     markChanged()
-    toast(`已应用 ${entries.length} 个菜单图标`)
+    toast(`已应用 ${entries.length} 个${label}`)
   }
   async function importZip(file: File | undefined, kind: 'theme' | 'mascot') {
     if (!file) return
@@ -841,8 +853,10 @@ import { element as $, initializeElements } from './dom'
         }),
       reportAsyncError,
     )
-    $('help').onclick = () => $('help-dialog').showModal()
-    $('help-close').onclick = () => $('help-dialog').close()
+    $('help').onclick = uiTask(async () => {
+      const result = await window.studio.openGuide()
+      if (!result.success) throw new Error(`无法打开使用指南：${result.error}`)
+    }, reportAsyncError)
     document.addEventListener('dragover', (event) => event.preventDefault())
     document.addEventListener('drop', (event) => event.preventDefault())
     window.studio.beforeClose(async () => {
@@ -867,7 +881,8 @@ import { element as $, initializeElements } from './dom'
       changed: markChanged,
       toast,
       importImage,
-      importIcons,
+      importIcons: (entries) => importBatch(entries, 'icon'),
+      importCursors: (entries) => importBatch(entries, 'cursor'),
       selectTab,
     })
     const result = await window.studio.loadDraft()
