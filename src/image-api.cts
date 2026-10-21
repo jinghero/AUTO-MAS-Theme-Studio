@@ -180,7 +180,8 @@ async function generateImage(input: ImageRequest, signal?: AbortSignal, fetcher 
         401: 'API Key 无效或已过期',
         403: '当前密钥无权使用这个生图模型',
         404: '未找到接口或模型，请检查 API 地址和模型名',
-        429: '服务商限流或额度不足，请稍后重试或检查账户额度',
+        429: '服务商限流或额度不足（429），请稍后重试或检查账户额度',
+        503: '服务商暂时不可用或繁忙（503），请稍后重试',
       }
       if (references.length && [404, 405, 415].includes(response.status))
         common[response.status] =

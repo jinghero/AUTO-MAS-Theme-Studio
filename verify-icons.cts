@@ -35,6 +35,7 @@ let application,
   address,
   png,
   failAt = 0,
+  failStatus = 500,
   holdAt = 0,
   blockArchive,
   blockedFile,
@@ -70,7 +71,9 @@ const server = http.createServer(async (request, response) => {
     blockArchive = null
   }
   if (requests.length === holdAt) return
-  response.writeHead(requests.length === failAt ? 500 : 200, { 'Content-Type': 'application/json' })
+  response.writeHead(requests.length === failAt ? failStatus : 200, {
+    'Content-Type': 'application/json',
+  })
   response.end(
     requests.length === failAt
       ? JSON.stringify({ error: { message: 'fixture generation failed' } })
@@ -317,17 +320,43 @@ async function verify() {
     ok('取消批量请求保留已完成项，继续时只生成未完成图标')
     start = requests.length
     failAt = start + 3
+    failStatus = 503
     await page.locator('#ai-prompt').fill(marker + '-失败')
     await page.locator('#ai-generate').click()
     await idle()
     assert.equal(requests.length - start, 3)
     assert.equal(await page.locator('#ai-icon-grid img').count(), 2)
-    failAt = 0
+    assert((await page.locator('#ai-status').textContent())!.includes('503'))
+    assert((await page.locator('#ai-status').textContent())!.includes('繁忙'))
+    await page.locator('#ai-key').fill('')
+    await page.evaluate(() => {
+      ;(document.getElementById('ai-settings') as HTMLDetailsElement).open = false
+    })
+    await page.locator('#ai-continue-icons').click()
+    assert(await page.locator('#ai-settings').evaluate((node: HTMLDetailsElement) => node.open))
+    assert((await page.locator('#ai-status').textContent())!.includes('API Key'))
+    assert.equal(requests.length - start, 3)
+    await page.locator('#ai-key').fill(key)
+    failAt = start + 4
+    failStatus = 429
     await page.locator('#ai-continue-icons').click()
     await idle()
-    assert.equal(requests.length - start, 12)
+    assert.equal(requests.length - start, 4)
+    assert.equal(requests.at(-1).data.prompt, requests.at(-2).data.prompt)
+    assert.equal(await page.locator('#ai-icon-grid img').count(), 2)
+    assert((await page.locator('#ai-status').textContent())!.includes('429'))
+    assert((await page.locator('#ai-status').textContent())!.includes('限流'))
+    assert((await page.locator('#toast').textContent())!.includes('429'))
+    await page.screenshot({
+      path: path.join(qa, packaged ? 'icons-rate-limit-portable.png' : 'icons-rate-limit.png'),
+    })
+    failAt = 0
+    failStatus = 500
+    await page.locator('#ai-continue-icons').click()
+    await idle()
+    assert.equal(requests.length - start, 13)
     assert.equal(await page.locator('#ai-icon-grid img').count(), 11)
-    ok('接口失败暂停整批且不自动重试收费请求，支持继续剩余项目')
+    ok('503 服务繁忙和继续时 429 限流均明确提示，服务恢复后仅继续未完成项，不重复生成已完成图标')
     library = await listing()
     const diskPrompt = marker + '-磁盘故障'
     blockArchive = {
@@ -562,6 +591,98 @@ async function verify() {
     fs.writeFileSync(path.join(isolated, saved.entry.id + '.json'), JSON.stringify(legacyRecord))
     assert.equal(service.readReferences(saved.entry.id).referencesStored, false)
     ok('归档去重、分页、损坏记录隔离、写入失败与路径限制')
+    await page.selectOption('#ai-target', 'cursor')
+    await page.locator('#ai-cursor-batch').check()
+    await page.locator('#ai-cursor-settings details summary').click()
+    await page.locator('#ai-cursor-prompt-pointer').fill('叶片装饰的手形指针')
+    await page.locator('#ai-base-url').fill(address + '/v1')
+    await page.locator('#ai-model').fill('fixture-cursors')
+    await page.locator('#ai-key').fill(key)
+    await page.locator('#ai-prompt').fill(marker + '-成组光标')
+    const oldManifest = JSON.parse(await page.locator('#manifest-json').textContent())
+    start = requests.length
+    failAt = start + 2
+    failStatus = 429
+    await page.locator('#ai-generate').click()
+    await idle()
+    assert.equal(requests.length - start, 2)
+    assert.equal(await page.locator('#ai-icon-grid img').count(), 1)
+    assert((await page.locator('#ai-status').textContent())!.includes('429'))
+    failAt = 0
+    failStatus = 500
+    await page.locator('#ai-continue-icons').click()
+    await idle()
+    assert.equal(requests.length - start, 4)
+    assert.equal(await page.locator('#ai-icon-grid img').count(), 3)
+    assert(requests[start + 2].data.prompt.includes('叶片装饰的手形指针'))
+    assert.equal(
+      JSON.stringify(JSON.parse(await page.locator('#manifest-json').textContent())),
+      JSON.stringify(oldManifest),
+    )
+    await page.getByRole('checkbox', { name: '使用手形指针光标', exact: true }).uncheck()
+    await page.locator('#ai-apply-icons').click()
+    await page.waitForFunction(() => !(document.getElementById('tab-assets') as HTMLElement).hidden)
+    let appliedCursors = JSON.parse(await page.locator('#manifest-json').textContent())
+    assert.equal(appliedCursors.cursors?.pointer?.path, oldManifest.cursors?.pointer?.path)
+    assert(appliedCursors.cursors.default && appliedCursors.cursors.text)
+    assert.deepEqual(appliedCursors.menuIcons, oldManifest.menuIcons)
+    await page.locator('[data-tab="ai"]').click()
+    await page.getByRole('checkbox', { name: '使用手形指针光标', exact: true }).check()
+    await page.locator('#ai-apply-icons').click()
+    await page.waitForFunction(() => !(document.getElementById('tab-assets') as HTMLElement).hidden)
+    appliedCursors = JSON.parse(await page.locator('#manifest-json').textContent())
+    await page.waitForFunction(() =>
+      document.getElementById('draft-status')?.textContent?.startsWith('草稿已保存'),
+    )
+    const cursorDraft = await page.evaluate(() => window.studio.loadDraft())
+    assert(cursorDraft.success && cursorDraft.state)
+    const cursorPackage = readPackage(buildPackage(cursorDraft.state).bytes)
+    assert.deepEqual(Object.keys(cursorPackage.manifest.cursors!).sort(), [
+      'default',
+      'pointer',
+      'text',
+    ])
+    for (const cursor of Object.values(cursorPackage.manifest.cursors!)) {
+      const info = await page.evaluate(
+        (url) => window.themeImages.inspect(url),
+        cursorPackage.assets[cursor.path],
+      )
+      assert(info.width <= 64 && info.height <= 64)
+      assert((cursor.hotspotX ?? 0) < info.width && (cursor.hotspotY ?? 0) < info.height)
+    }
+    await application.close()
+    application = null
+    const unarchivedCursor = cursorDraft.state.aiResult.items.find((item) => item.key === 'text')
+    delete unarchivedCursor.libraryId
+    fs.writeFileSync(draftPath, JSON.stringify(cursorDraft.state))
+    await launch()
+    await page.locator('[data-tab="ai"]').click()
+    assert.equal(await page.locator('#ai-icon-grid img').count(), 3)
+    assert(await page.locator('#ai-cursor-batch').isChecked())
+    let restoredCursorId: string | undefined
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const draft = await page.evaluate(() => window.studio.loadDraft())
+      restoredCursorId = draft.state?.aiResult?.items?.find(
+        (item) => item.key === 'text',
+      )?.libraryId
+      if (restoredCursorId) break
+      await page.waitForTimeout(25)
+    }
+    assert(restoredCursorId)
+    const restoredCursor = await page.evaluate(
+      (id) => window.studio.readLibraryImage(id),
+      restoredCursorId,
+    )
+    assert(restoredCursor.success, restoredCursor.error)
+    assert.equal(restoredCursor.entry.target, 'cursor')
+    assert.equal(restoredCursor.entry.cursorKey, 'text')
+    assert(!restoredCursor.entry.iconKey)
+    await page.screenshot({
+      path: path.join(qa, packaged ? 'cursors-portable.png' : 'cursors.png'),
+    })
+    ok(
+      '成组光标按独立提示词生成、限流后仅继续剩余项、勾选应用与菜单隔离、64 像素和热点校验、主题 ZIP 往返与重启补存保留光标用途',
+    )
     await application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].setSize(1000, 720),
     )

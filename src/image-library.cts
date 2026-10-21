@@ -25,6 +25,9 @@ function metadata(input: Omit<ImageMetadata, 'bytes'>): Omit<ImageMetadata, 'byt
     prompt: text(input.prompt, 20000),
     basePrompt: text(input.basePrompt, 16000),
     iconSubject: text(input.iconSubject, 1200),
+    ...(input.target === 'cursor'
+      ? { cursorKey: text(input.cursorKey, 40), cursorSubject: text(input.cursorSubject, 1200) }
+      : {}),
     model: text(input.model, 200),
     style: text(input.style, 2000),
     width: input.width,

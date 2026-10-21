@@ -70,6 +70,8 @@ export interface ImageMetadata extends ImageInfo {
   prompt?: string
   basePrompt?: string
   iconSubject?: string
+  cursorKey?: string
+  cursorSubject?: string
   model?: string
   style?: string
 }
@@ -111,13 +113,23 @@ export interface IconResult {
   referenceImages?: ReferenceImage[]
   target?: Target
   iconKey?: string
+  cursorKey?: string
 }
-export interface IconBatch {
-  kind: 'icon-batch'
-  target: 'icon'
+export interface AssetBatch {
+  kind: 'icon-batch' | 'cursor-batch'
+  target: 'icon' | 'cursor'
   referenceCount: number
   items: IconResult[]
   libraryError?: undefined
+}
+export interface TargetPrompt {
+  style: string
+  prompt: string
+}
+export interface PromptPlan {
+  targets: Record<Target, TargetPrompt>
+  iconPrompts: Record<string, string>
+  cursorPrompts: Record<string, string>
 }
 export interface GeneratorSettings {
   baseURL: string
@@ -133,14 +145,18 @@ export interface GeneratorSettings {
   visionBaseURL: string
   iconBatch: boolean
   iconKey: string
+  cursorBatch: boolean
+  cursorKey: string
   prompt?: string
   iconPrompts?: Record<string, string>
+  cursorPrompts?: Record<string, string>
+  targetPrompts?: Partial<Record<Target, TargetPrompt>>
 }
 export interface StudioState {
   manifest: Manifest
   assets: Record<string, string>
   generator?: GeneratorSettings
-  aiResult?: GeneratedImage | IconBatch
+  aiResult?: GeneratedImage | AssetBatch
 }
 export interface MascotState {
   manifest: MascotManifest
@@ -152,6 +168,7 @@ export interface EditorHooks {
   toast(message: string, error?: boolean): void
   importImage(file: File, slot: Target): Promise<void>
   importIcons(entries: { key: string; url: string }[]): Promise<void>
+  importCursors(entries: { key: string; url: string }[]): Promise<void>
   selectTab(tab: string): void
 }
 export interface LibraryHooks extends EditorHooks {

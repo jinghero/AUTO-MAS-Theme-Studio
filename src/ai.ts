@@ -1,7 +1,17 @@
 import { uiTask } from './async-ui'
 import { errorMessage } from './errors'
-import { targets, templates, defaults, iconPrompt, generationMetadata } from './generation'
+import {
+  targets,
+  defaults,
+  assetPrompt,
+  generationMetadata,
+  rememberTargetPrompt,
+  isBatch,
+  templates,
+} from './generation'
+import { parsePromptPlan } from './prompt-plan'
 import { iconSet } from './icons'
+import { cursorSet } from './cursors'
 import { themeImages } from './image-support'
 import { themeLibrary } from './library'
 import type { Target } from './types/studio'
@@ -9,9 +19,10 @@ import type {
   EditorHooks,
   ReferenceImage,
   StudioState,
-  IconBatch,
+  AssetBatch,
   GeneratedImage,
   LibraryEntry,
+  PromptPlan,
 } from './types/studio'
 import { element as $ } from './dom'
 export const themeAI = (() => {
@@ -25,14 +36,50 @@ export const themeAI = (() => {
     referenceOwner: StudioState | undefined,
     loadingReferences = false
   let describing = false,
-    promptCandidate: ReturnType<typeof promptContext> | null = null,
-    referenceVersion = 0
+    promptCandidate: { context: ReturnType<typeof promptContext>; plan: PromptPlan } | null = null,
+    referenceVersion = 0,
+    promptRevision = 0
   let batchRun: { cancelled: boolean; position: number; label: string } | null = null
-  const batchMode = () => settings().target === 'icon' && settings().iconBatch === true
+  const batchMode = () =>
+    settings().target === 'icon'
+      ? settings().iconBatch
+      : settings().target === 'cursor' && settings().cursorBatch
+  const batchAvailable = (result: AssetBatch) => batchMode() && settings().target === result.target
   function clearSuggestion() {
     promptCandidate = null
     $('ai-prompt-suggestion').hidden = true
     $('ai-suggested-prompt').value = ''
+  }
+  function renderPromptCandidate() {
+    if (!promptCandidate) return
+    const target = $('ai-suggested-target').value as Target,
+      candidate = promptCandidate.plan.targets[target]
+    $('ai-suggested-style').value = candidate.style
+    $('ai-suggested-prompt').value = candidate.prompt
+    $('ai-suggested-icons').hidden = target !== 'icon'
+    $('ai-suggested-cursors').hidden = target !== 'cursor'
+    for (const [catalog, field, listId] of [
+      [iconSet, 'iconPrompts', 'ai-suggested-icon-prompts'],
+      [cursorSet, 'cursorPrompts', 'ai-suggested-cursor-prompts'],
+    ] as const) {
+      const list = $(listId)
+      list.replaceChildren()
+      for (const icon of catalog) {
+        const label = document.createElement('label'),
+          input = document.createElement('textarea')
+        label.className = 'field'
+        label.append(document.createTextNode(icon.label))
+        input.rows = 3
+        input.maxLength = 1200
+        input.setAttribute('aria-label', `${icon.label}候选专属提示词`)
+        input.value = promptCandidate.plan[field][icon.key]
+        input.oninput = () => {
+          if (promptCandidate) promptCandidate.plan[field][icon.key] = input.value
+        }
+        label.append(input)
+        list.append(label)
+      }
+    }
   }
   function promptContext() {
     return {
@@ -41,6 +88,7 @@ export const themeAI = (() => {
       style: settings().style,
       color: hooks.getState().manifest.tokens.colorPrimary,
       references: referenceVersion,
+      revision: promptRevision,
     }
   }
   function sameContext(context: ReturnType<typeof promptContext>) {
@@ -48,6 +96,16 @@ export const themeAI = (() => {
     return (Object.keys(context) as (keyof typeof context)[]).every(
       (key) => context[key] === current[key],
     )
+  }
+  function samePlanContext(context: ReturnType<typeof promptContext>) {
+    const current = promptContext()
+    return (['owner', 'color', 'references', 'revision'] as const).every(
+      (key) => context[key] === current[key],
+    )
+  }
+  function promptPreferencesChanged() {
+    promptRevision++
+    clearSuggestion()
   }
   function settings() {
     const state = hooks.getState()
@@ -105,10 +163,12 @@ export const themeAI = (() => {
     $('ai-reference-add').textContent = loadingReferences ? '正在读取参考图…' : '＋ 添加参考图'
     $('ai-generate').disabled = busy
     $('ai-describe').disabled = busy || !referenceImages.length
-    $('ai-describe').textContent = describing ? '正在生成提示词…' : '根据参考图生成提示词'
+    $('ai-describe').textContent = describing ? '正在生成整套提示词…' : '根据参考图生成整套提示词'
     if (!generating)
       $('ai-generate').textContent = batchMode()
-        ? `✦ 批量生成 ${iconSet.length} 个图标`
+        ? settings().target === 'cursor'
+          ? '✦ 批量生成 3 个光标'
+          : `✦ 批量生成 ${iconSet.length} 个图标`
         : referenceImages.length
           ? '✦ 参考图生成'
           : '✦ 生成图片'
@@ -161,7 +221,7 @@ export const themeAI = (() => {
   }
   function renderResult() {
     const result = hooks.getState().aiResult
-    const batch = result?.kind === 'icon-batch'
+    const batch = isBatch(result)
     $('ai-empty').hidden = !!result
     $('ai-result').hidden = !result || batch
     $('ai-icon-results').hidden = !batch
@@ -179,6 +239,7 @@ export const themeAI = (() => {
     $('ai-apply').textContent = `应用为${targets[result.target] || '主题背景'} ↗`
     $('ai-icon-key-field').hidden = result.target !== 'icon'
     if (result.iconKey) $('ai-icon-key').value = result.iconKey
+    if (result.cursorKey) $('ai-cursor-key').value = result.cursorKey
     $('ai-cursor-key-field').hidden = result.target !== 'cursor'
     $('ai-result-note').textContent =
       result.target === 'cursor'
@@ -210,18 +271,26 @@ export const themeAI = (() => {
     ] as const)
       $(id).value = config[key] ?? defaults[key]
     if (!config.prompt) config.prompt = presetPrompt()
+    rememberTargetPrompt(config)
     $('ai-prompt').value = config.prompt
     $('ai-transparent').checked = config.transparent === true
     $('ai-vision-separate').checked = config.visionSeparate === true
     $('ai-vision-custom').hidden = config.visionSeparate !== true
     $('ai-icon-settings').hidden = config.target !== 'icon'
+    $('ai-cursor-settings').hidden = config.target !== 'cursor'
+    $('ai-cursor-batch').checked = config.cursorBatch
+    $('ai-cursor-single-field').hidden = config.cursorBatch
+    $('ai-cursor-target').value = config.cursorKey
+    for (const cursor of cursorSet)
+      $(`ai-cursor-prompt-${cursor.key}`).value =
+        config.cursorPrompts?.[cursor.key] ?? cursor.subject
     $('ai-icon-batch').checked = config.iconBatch === true
     $('ai-icon-single-field').hidden = batchMode()
     $('ai-icon-batch-hint').hidden = !batchMode()
     $('ai-icon-target').value = config.iconKey || 'default'
     for (const icon of iconSet)
       $(`ai-icon-prompt-${icon.key}`).value = config.iconPrompts?.[icon.key] ?? icon.subject
-    if (promptCandidate && !sameContext(promptCandidate)) clearSuggestion()
+    if (promptCandidate && !samePlanContext(promptCandidate.context)) clearSuggestion()
     renderReferences()
     renderResult()
   }
@@ -239,6 +308,11 @@ export const themeAI = (() => {
       render()
       $('ai-status').textContent ||= '准备就绪，填写 API Key 后即可生成。'
     }
+  }
+  function generationError(message: string) {
+    $('ai-status').className = 'validation error'
+    $('ai-status').textContent = message
+    hooks.toast(message, true)
   }
   async function generate() {
     if (generating || describing || loadingReferences) return
@@ -278,10 +352,7 @@ export const themeAI = (() => {
       const response = await window.studio.generate({
         ...config,
         apiKey,
-        prompt:
-          config.target === 'icon'
-            ? iconPrompt(config, config.iconKey || 'default')
-            : config.prompt,
+        prompt: assetPrompt(config, config.target === 'cursor' ? config.cursorKey : config.iconKey),
         referenceImages: references,
       })
       if (!response.success) throw new Error(response.error)
@@ -289,7 +360,10 @@ export const themeAI = (() => {
       const image: GeneratedImage = {
         ...response.image,
         ...info,
-        ...generationMetadata(config, config.iconKey || 'default'),
+        ...generationMetadata(
+          config,
+          config.target === 'cursor' ? config.cursorKey : config.iconKey,
+        ),
         referenceImages: references,
       }
       const saved = await themeLibrary.save(image)
@@ -326,10 +400,11 @@ export const themeAI = (() => {
         $('ai-status').textContent = '已切换主题，可从本地素材库选用已保存的图片。'
     }
   }
-  function batchButtons(result: IconBatch) {
+  function batchButtons(result: AssetBatch) {
+    const unit = result.target === 'cursor' ? '光标' : '图标'
     const ready = result.items.filter((item) => item.url && item.selected !== false).length
     const remaining = result.items.filter((item) => item.status !== 'ready').length
-    $('ai-apply-icons').textContent = `应用已选图标（${ready}）`
+    $('ai-apply-icons').textContent = `应用已选${unit}（${ready}）`
     $('ai-apply-icons').disabled = generating || describing || !ready
     $('ai-continue-icons').hidden = !remaining
     $('ai-continue-icons').textContent = `继续生成未完成项（${remaining}）`
@@ -337,15 +412,18 @@ export const themeAI = (() => {
       generating ||
       describing ||
       loadingReferences ||
-      !batchMode() ||
+      !batchAvailable(result) ||
       result.items.some((item) => item.archiveSource)
     $('ai-archive-icons').hidden = !result.items.some((item) => item.archiveSource)
     $('ai-archive-icons').disabled = generating || describing
   }
-  function renderBatch(result: IconBatch) {
+  function renderBatch(result: AssetBatch) {
+    const unit = result.target === 'cursor' ? '光标' : '图标'
+    $('ai-batch-title').textContent =
+      `${result.target === 'cursor' ? '鼠标光标' : '菜单图标'} · 同一套风格`
     const ready = result.items.filter((item) => item.url).length
     $('ai-icon-summary').textContent =
-      `已生成 ${ready} / ${result.items.length} 个图标 · 每个图标有独立的用途提示词，共用画风与参考图`
+      `已生成 ${ready} / ${result.items.length} 个${unit} · 每项有独立的用途提示词，共用画风与参考图`
     const grid = $('ai-icon-grid')
     grid.replaceChildren()
     for (const item of result.items) {
@@ -368,7 +446,7 @@ export const themeAI = (() => {
       checked.type = 'checkbox'
       checked.checked = item.selected !== false
       checked.disabled = !item.url || generating || describing
-      checked.setAttribute('aria-label', `使用${item.label}图标`)
+      checked.setAttribute('aria-label', `使用${item.label}${unit}`)
       checked.onchange = () => {
         item.selected = checked.checked
         hooks.changed()
@@ -388,8 +466,8 @@ export const themeAI = (() => {
       retry.type = 'button'
       retry.className = 'text-button'
       retry.textContent = '单独重新生成'
-      retry.setAttribute('aria-label', `重新生成${item.label}图标`)
-      retry.disabled = generating || describing || loadingReferences || !batchMode()
+      retry.setAttribute('aria-label', `重新生成${item.label}${unit}`)
+      retry.disabled = generating || describing || loadingReferences || !batchAvailable(result)
       retry.onclick = uiTask(() => generateBatch([item.key]), reportAsyncError)
       card.append(preview, label, status, retry)
       grid.append(card)
@@ -400,8 +478,9 @@ export const themeAI = (() => {
     if (generating || describing || loadingReferences) return
     const apiKey = $('ai-key').value.trim()
     if (!apiKey) {
+      $('ai-settings').open = true
       $('ai-key').focus()
-      hooks.toast('请在工具里填写 API Key', true)
+      generationError('请在工具里填写 API Key 后再继续生成')
       return
     }
     renderReferences()
@@ -409,26 +488,26 @@ export const themeAI = (() => {
       owner = hooks.getState(),
       references = structuredClone(referenceImages)
     if (!config.prompt?.trim()) {
-      hooks.toast('请填写共同的风格提示词', true)
+      generationError('请填写共同的风格提示词')
       return
     }
     let result = owner.aiResult
     if (result?.items?.some((item) => item.archiveSource)) {
-      hooks.toast('请先重试保存未归档的原图', true)
+      generationError('请先重试保存未归档的原图')
       return
     }
     if (keys) {
-      if (result?.kind !== 'icon-batch') return
+      if (!isBatch(result) || result.target !== config.target) return
       if (result.referenceCount && !references.length) {
-        hooks.toast('请重新添加参考图后再继续生成', true)
+        generationError('请重新添加参考图后再继续生成')
         return
       }
     } else {
       result = {
-        kind: 'icon-batch',
-        target: 'icon',
+        kind: config.target === 'cursor' ? 'cursor-batch' : 'icon-batch',
+        target: config.target === 'cursor' ? 'cursor' : 'icon',
         referenceCount: references.length,
-        items: iconSet.map((icon) => ({
+        items: (config.target === 'cursor' ? cursorSet : iconSet).map((icon) => ({
           key: icon.key,
           label: icon.label,
           status: 'pending',
@@ -438,8 +517,10 @@ export const themeAI = (() => {
       owner.aiResult = result
     }
     const jobs = result.items.filter((item) => !keys || keys.includes(item.key))
+    const unit = result.target === 'cursor' ? '光标' : '图标'
     if (!jobs.length) return
     const run = { cancelled: false, position: 0, label: '' }
+    let failure: string | undefined
     batchRun = run
     generating = true
     started = Date.now()
@@ -451,7 +532,7 @@ export const themeAI = (() => {
     $('ai-status').className = 'validation'
     const update = () => {
       $('ai-status').textContent =
-        `正在生成 ${run.position} / ${jobs.length} · ${run.label} · ${Math.floor((Date.now() - started) / 1000)} 秒；已完成的图标会保留。`
+        `正在生成 ${run.position} / ${jobs.length} · ${run.label} · ${Math.floor((Date.now() - started) / 1000)} 秒；已完成的${unit}会保留。`
     }
     timer = setInterval(update, 1000)
     try {
@@ -466,22 +547,25 @@ export const themeAI = (() => {
         try {
           const response = await window.studio.generate({
             ...config,
-            target: 'icon',
+            target: result.target,
             apiKey,
-            prompt: iconPrompt(config, item.key),
+            prompt: assetPrompt(config, item.key),
             referenceImages: references,
           })
           if (!response.success) throw new Error(response.error)
           const original: GeneratedImage = {
             ...response.image,
-            ...(await themeImages.inspect(response.image.url, '生成的图标')),
+            ...(await themeImages.inspect(response.image.url, `生成的${unit}`)),
             ...generationMetadata(config, item.key),
             referenceImages: references,
           }
           const saved = await themeLibrary.save(original)
           if (owner !== hooks.getState()) break
-          const url = await themeImages.fit(response.image.url, 128),
-            info = await themeImages.inspect(url, '生成的图标')
+          const url = await themeImages.fit(
+              response.image.url,
+              result.target === 'cursor' ? 64 : 128,
+            ),
+            info = await themeImages.inspect(url, `生成的${unit}`)
           if (owner !== hooks.getState()) break
           Object.assign(item, info, { url, status: 'ready', libraryId: original.libraryId })
           if (!saved) item.archiveSource = original
@@ -490,7 +574,10 @@ export const themeAI = (() => {
           if (!saved) break
         } catch (error) {
           item.status = item.url ? 'ready' : 'error'
-          if (!run.cancelled) item.error = errorMessage(error)
+          if (!run.cancelled) {
+            failure = errorMessage(error)
+            item.error = failure
+          }
           break
         }
       }
@@ -507,7 +594,11 @@ export const themeAI = (() => {
         $('ai-status').className = remaining ? 'validation' : 'validation success'
         $('ai-status').textContent = result.items.some((item) => item.archiveSource)
           ? '素材库保存失败，批量生成已暂停。请先重试保存原图。'
-          : `${run.cancelled ? '已取消批量生成' : remaining ? '批量生成已暂停' : '整套图标已生成'} · 已保留 ${ready} / ${result.items.length} 个图标${remaining ? '，可继续生成未完成项。' : '，原图均已存入本地素材库，请预览后应用。'}`
+          : `${run.cancelled ? '已取消批量生成' : remaining ? '批量生成已暂停' : `整套${unit}已生成`} · 已保留 ${ready} / ${result.items.length} 个${unit}${remaining ? '，可继续生成未完成项。' : '，原图均已存入本地素材库，请预览后应用。'}`
+        if (failure)
+          generationError(
+            `生成失败：${failure}。已保留 ${ready} / ${result.items.length} 个${unit}${remaining ? '，可继续生成未完成项。' : '，原有图片已保留。'}`,
+          )
         hooks.changed()
       } else
         $('ai-status').textContent =
@@ -547,7 +638,7 @@ export const themeAI = (() => {
         : config.baseURL,
       apiKey,
       model: config.visionModel,
-      instructions: `用途：${targets[config.target]}。\n${templates[config.target] || templates.background}\n从参考图的实际主体、配色和画风提取描述。当前风格偏好「${config.style || '未指定'}」仅作辅助，冲突时优先使用参考图的可见特征。主题主色 ${context.color} 仅供搭配参考。`,
+      instructions: `为全部五类用途和全部菜单图标生成整套方案。从参考图的实际主体、配色和画风提取描述。当前风格偏好「${config.style || '未指定'}」仅作辅助，冲突时优先使用参考图的可见特征。各用途已有风格：${JSON.stringify(Object.fromEntries(Object.entries(config.targetPrompts || {}).map(([key, value]) => [key, value?.style])))}。主题主色 ${context.color} 仅供搭配参考。`,
       referenceImages: referenceImages.map(({ url }) => ({ url })),
     }
     describing = true
@@ -558,20 +649,23 @@ export const themeAI = (() => {
     const began = Date.now(),
       update = () => {
         $('ai-describe-status').textContent =
-          `正在分析 ${input.referenceImages.length} 张参考图 · ${Math.floor((Date.now() - began) / 1000)} 秒`
+          `正在分析 ${input.referenceImages.length} 张参考图并规划全部用途 · ${Math.floor((Date.now() - began) / 1000)} 秒`
       }
     update()
     const progressTimer = setInterval(update, 1000)
     try {
       const response = await window.studio.describe(input)
       if (!response.success) throw new Error(response.error)
-      if (!sameContext(context)) throw new Error('主题、参考图、用途或风格已改变，请重新生成提示词')
-      promptCandidate = context
-      $('ai-suggested-prompt').value = response.prompt
+      if (!samePlanContext(context))
+        throw new Error('主题、参考图或风格偏好已改变，请重新生成提示词')
+      promptCandidate = { context, plan: response.plan }
+      $('ai-suggested-target').value = settings().target
+      renderPromptCandidate()
       $('ai-prompt-suggestion').hidden = false
       $('ai-describe-status').className = 'validation success'
-      $('ai-describe-status').textContent = '候选提示词已生成，可编辑后点击「使用此提示词」。'
-      hooks.toast('候选提示词已生成，可编辑后使用')
+      $('ai-describe-status').textContent =
+        '五类用途、11 个菜单图标与 3 个光标的候选提示词已生成，可逐项编辑后点击「使用整套提示词」。'
+      hooks.toast('整套候选提示词已生成，可逐项编辑后统一使用')
       $('ai-prompt-suggestion').scrollIntoView({ block: 'nearest' })
     } catch (error) {
       $('ai-describe-status').className = 'validation error'
@@ -586,7 +680,7 @@ export const themeAI = (() => {
   }
   async function apply() {
     const result = hooks.getState().aiResult
-    if (!result || result.kind === 'icon-batch') return
+    if (!result || isBatch(result)) return
     try {
       let url = result.url
       if (['icon', 'cursor'].includes(result.target))
@@ -632,6 +726,7 @@ export const themeAI = (() => {
         referenceVersion++
       }
       const config = settings()
+      rememberTargetPrompt(config)
       config.target = entry.target
       config.prompt = entry.basePrompt || entry.prompt
       config.style = entry.style || config.style
@@ -642,6 +737,14 @@ export const themeAI = (() => {
         if (entry.iconSubject) {
           config.iconPrompts ||= {}
           config.iconPrompts[entry.iconKey!] = entry.iconSubject
+        }
+      }
+      if (entry.target === 'cursor' && cursorSet.some((cursor) => cursor.key === entry.cursorKey)) {
+        config.cursorKey = entry.cursorKey!
+        config.cursorBatch = false
+        if (entry.cursorSubject) {
+          config.cursorPrompts ||= {}
+          config.cursorPrompts[entry.cursorKey!] = entry.cursorSubject
         }
       }
       clearSuggestion()
@@ -695,28 +798,43 @@ export const themeAI = (() => {
     )
     for (const id of ['ai-icon-key'] as const)
       for (const option of $('icon-key').options) $(id).append(option.cloneNode(true))
-    for (const icon of iconSet) {
-      const option = document.createElement('option')
-      option.value = icon.key
-      option.textContent = icon.label
-      $('ai-icon-target').append(option)
-      const label = document.createElement('label')
-      label.className = 'field'
-      label.append(document.createTextNode(icon.label))
-      const purpose = document.createElement('small')
-      purpose.textContent = `用途：${icon.purpose}`
-      const input = document.createElement('textarea')
-      input.id = `ai-icon-prompt-${icon.key}`
-      input.rows = 2
-      input.maxLength = 1200
-      input.value = icon.subject
-      input.oninput = () => {
-        settings().iconPrompts ||= {}
-        settings().iconPrompts![icon.key] = input.value
-        hooks.changed()
+    for (const [prefix, catalog, field] of [
+      ['icon', iconSet, 'iconPrompts'],
+      ['cursor', cursorSet, 'cursorPrompts'],
+    ] as const) {
+      for (const icon of catalog) {
+        const option = document.createElement('option')
+        option.value = icon.key
+        option.textContent = icon.label
+        $(prefix === 'icon' ? 'ai-icon-target' : 'ai-cursor-target').append(option)
+        const label = document.createElement('label')
+        label.className = 'field'
+        label.append(document.createTextNode(icon.label))
+        const purpose = document.createElement('small')
+        purpose.textContent = `用途：${icon.purpose}`
+        const input = document.createElement('textarea')
+        input.id = `ai-${prefix}-prompt-${icon.key}`
+        input.rows = 2
+        input.maxLength = 1200
+        input.value = icon.subject
+        input.oninput = () => {
+          settings()[field] ||= {}
+          settings()[field]![icon.key] = input.value
+          promptPreferencesChanged()
+          hooks.changed()
+        }
+        label.append(purpose, input)
+        $(prefix === 'icon' ? 'ai-icon-prompt-list' : 'ai-cursor-prompt-list').append(label)
       }
-      label.append(purpose, input)
-      $('ai-icon-prompt-list').append(label)
+    }
+    $('ai-cursor-target').onchange = () => {
+      settings().cursorKey = $('ai-cursor-target').value
+      hooks.changed()
+    }
+    $('ai-cursor-batch').onchange = () => {
+      settings().cursorBatch = $('ai-cursor-batch').checked
+      render()
+      hooks.changed()
     }
     $('ai-icon-target').onchange = () => {
       settings().iconKey = $('ai-icon-target').value
@@ -730,7 +848,7 @@ export const themeAI = (() => {
     $('ai-continue-icons').onclick = uiTask(
       () =>
         generateBatch(
-          (hooks.getState().aiResult as IconBatch).items
+          (hooks.getState().aiResult as AssetBatch).items
             .filter((item) => item.status !== 'ready')
             .map((item) => item.key),
         ),
@@ -738,13 +856,14 @@ export const themeAI = (() => {
     )
     $('ai-apply-icons').onclick = uiTask(async () => {
       const result = hooks.getState().aiResult
-      if (result?.kind !== 'icon-batch' || generating || describing) return
+      if (!isBatch(result) || generating || describing) return
       const selected = result.items
         .filter((item) => item.url && item.selected !== false)
         .map(({ key, url }) => ({ key, url: url! }))
       $('ai-apply-icons').disabled = true
       try {
-        await hooks.importIcons(selected)
+        if (result.target === 'cursor') await hooks.importCursors(selected)
+        else await hooks.importIcons(selected)
         hooks.selectTab('assets')
       } catch (error) {
         hooks.toast(`无法应用：${errorMessage(error)}`, true)
@@ -763,7 +882,8 @@ export const themeAI = (() => {
     ] as const)
       $(id).oninput = () => {
         settings()[key] = $(id).value
-        if (key === 'style') clearSuggestion()
+        if (key === 'style' || key === 'prompt') rememberTargetPrompt(settings())
+        if (key === 'style' || key === 'prompt') promptPreferencesChanged()
         hooks.changed()
       }
     $('ai-vision-separate').onchange = () => {
@@ -782,23 +902,38 @@ export const themeAI = (() => {
       }
     }, reportAsyncError)
     $('ai-discard-prompt').onclick = clearSuggestion
+    $('ai-suggested-target').onchange = renderPromptCandidate
+    for (const [id, key] of [
+      ['ai-suggested-style', 'style'],
+      ['ai-suggested-prompt', 'prompt'],
+    ] as const)
+      $(id).oninput = () => {
+        if (promptCandidate)
+          promptCandidate.plan.targets[$('ai-suggested-target').value as Target][key] = $(id).value
+      }
     $('ai-use-prompt').onclick = () => {
-      if (!promptCandidate || !sameContext(promptCandidate)) {
+      if (!promptCandidate || !samePlanContext(promptCandidate.context)) {
         clearSuggestion()
         hooks.toast('参考图或生成要求已改变，请重新生成提示词', true)
         return
       }
-      const prompt = $('ai-suggested-prompt').value.trim()
-      if (!prompt || prompt.length > 16000) {
-        hooks.toast('提示词需要在 1–16000 字以内', true)
+      let plan: PromptPlan
+      try {
+        plan = parsePromptPlan(promptCandidate.plan)
+      } catch (error) {
+        hooks.toast(errorMessage(error), true)
         return
       }
-      settings().prompt = prompt
-      $('ai-prompt').value = prompt
+      const config = settings()
+      config.targetPrompts = plan.targets
+      config.iconPrompts = plan.iconPrompts
+      config.cursorPrompts = plan.cursorPrompts
+      Object.assign(config, plan.targets[config.target])
       clearSuggestion()
+      render()
       hooks.changed()
       $('ai-prompt').focus()
-      hooks.toast('已使用生成的提示词，可继续编辑或生成图片')
+      hooks.toast('已使用整套灵感风格与提示词，切换用途即可查看和生成图片')
     }
     for (const [id, key] of [
       ['ai-quality', 'quality'],
@@ -810,14 +945,18 @@ export const themeAI = (() => {
       }
     $('ai-target').onchange = () => {
       const config = settings()
+      rememberTargetPrompt(config)
       config.target = $('ai-target').value as Target
       config.size = ['background', 'cover'].includes(config.target) ? '1536x1024' : '1024x1024'
-      config.prompt = presetPrompt()
+      const saved = config.targetPrompts?.[config.target]
+      config.style = saved?.style ?? config.style
+      config.prompt = saved?.prompt ?? presetPrompt()
       render()
       hooks.changed()
     }
     $('ai-reset-prompt').onclick = () => {
       settings().prompt = presetPrompt()
+      promptPreferencesChanged()
       render()
       hooks.changed()
     }
@@ -843,7 +982,7 @@ export const themeAI = (() => {
     $('ai-apply').onclick = uiTask(apply, reportAsyncError)
     $('ai-save-image').onclick = uiTask(async () => {
       const image = hooks.getState().aiResult
-      if (!image || image.kind === 'icon-batch') return
+      if (!image || isBatch(image)) return
       const result = await window.studio.saveImage({ url: image.url })
       if (!result.success) hooks.toast(result.error, true)
       else if (!result.canceled) hooks.toast(`图片已保存：${result.filePath}`)
@@ -852,13 +991,16 @@ export const themeAI = (() => {
   async function restoreLibrary() {
     const owner = hooks.getState(),
       result = owner.aiResult
-    for (const image of result?.kind === 'icon-batch' ? result.items : result ? [result] : []) {
+    for (const image of isBatch(result) ? result.items : result ? [result] : []) {
       if (!image.url || image.libraryId) continue
       const source = image.archiveSource || image
+      const target = source.target || result?.target || 'icon'
       const candidate = {
         ...source,
-        target: source.target || 'icon',
-        iconKey: source.iconKey || image.key,
+        target,
+        ...(target === 'cursor'
+          ? { cursorKey: source.cursorKey || image.key }
+          : { iconKey: source.iconKey || image.key }),
       }
       const saved = await themeLibrary.save(candidate as GeneratedImage)
       // 旧草稿缺少生成说明时，只归档已保存的图片，不猜测当时使用的提示词。

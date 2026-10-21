@@ -1,5 +1,7 @@
-import type { GeneratorSettings } from './types/studio'
+import type { GeneratorSettings, StudioState, AssetBatch } from './types/studio'
 import { iconSet } from './icons'
+import { cursorSet } from './cursors'
+export const targetKeys = ['background', 'cover', 'icon', 'mascot', 'cursor'] as const
 export const targets = {
   background: '主题背景',
   cover: '主题封面',
@@ -16,7 +18,7 @@ export const templates = {
   mascot:
     '创作一个单独的可爱桌宠角色，全身完整可见，正面或轻微四分之三视角，居中构图，四周留白，表情友好。造型简洁有辨识度、轮廓干净，适合缩小后显示在桌面角落。透明背景，不要地面、底板、场景或投影。只画一个角色的一张静态形象；不要动画图集、多视图、重复角色、文字、标志或水印。',
   cursor:
-    '创作一个鼠标箭头光标素材：单个箭头，尖端朝向左上角，主体位于方形画布中央且完整可见，保留小幅透明边距。使用粗而清晰的外轮廓、大色块和极简细节，保证缩小到32至64像素后仍可识别。透明背景，无阴影、无底板、无场景，不要光标合集、文字、字母或水印。',
+    '创作一套风格统一的鼠标光标素材，包含默认箭头、手形指针和 I 形文本光标，每次仅绘制指定的一项。主体居中完整可见，保留小幅透明边距。使用清晰外轮廓、大色块和极简细节，缩小到32至64像素仍可识别。透明背景，无阴影、底板或场景，不要光标合集、文字、标志或水印。',
 }
 export const defaults: GeneratorSettings = {
   baseURL: 'https://api.openai.com/v1',
@@ -32,23 +34,50 @@ export const defaults: GeneratorSettings = {
   visionBaseURL: 'https://api.openai.com/v1',
   iconBatch: false,
   iconKey: 'default',
+  cursorBatch: false,
+  cursorKey: 'default',
 }
+export function isBatch(result: StudioState['aiResult']): result is AssetBatch {
+  return result?.kind === 'icon-batch' || result?.kind === 'cursor-batch'
+}
+export function rememberTargetPrompt(config: GeneratorSettings) {
+  if (config.prompt === undefined) return
+  config.targetPrompts ||= {}
+  config.targetPrompts[config.target] = { style: config.style, prompt: config.prompt }
+}
+const referenceGuidance =
+  '有参考图时，提取实际可见的主辅色、轮廓笔触、材质与代表性纹样，简化后应用到当前主体的具体部位；不直接复制整张参考画面，不臆造不可见细节。无参考图时按共同风格绘制。'
 export function iconPrompt(config: GeneratorSettings, key: string) {
   const icon = iconSet.find((item) => item.key === key)!
-  return `${config.prompt}\n\n本次只绘制「${icon.label}」的单个图标。用途：${icon.purpose}。\n专属要求：${config.iconPrompts?.[key]?.trim() || icon.subject}。\n沿用共同的画风、配色、线条粗细和原参考图风格；保持简洁清晰，主体居中、完整可见，透明背景。不要图标合集、其他菜单的符号、文字、字母或水印。`
+  return `${config.prompt}\n\n本次只绘制「${icon.label}」的单个图标。用途：${icon.purpose}。\n专属要求：${config.iconPrompts?.[key]?.trim() || icon.subject}。\n参考特征：${referenceGuidance}\n构图与辨识：主体居中约占画布七成，四周约15%留白，关键部件分离清楚，缩小至24像素仍可识别；沿用共同画风和线条粗细，透明背景。不要图标合集、其他菜单的符号、文字、字母或水印。`
+}
+export function assetPrompt(config: GeneratorSettings, key: string) {
+  if (config.target === 'icon') return iconPrompt(config, key)
+  if (config.target !== 'cursor') return config.prompt || ''
+  const cursor = cursorSet.find((item) => item.key === key)!
+  return `${config.prompt}\n\n本次只绘制「${cursor.label}」，用途：${cursor.purpose}。\n专属要求：${config.cursorPrompts?.[key]?.trim() || cursor.subject}。\n参考特征：${referenceGuidance}\n构图与辨识：保持当前光标的功能轮廓和朝向，装饰不遮挡尖端或中心；单个光标居中，四周少量透明留白，透明背景，缩小至32像素仍轮廓连贯。不要其他光标、合集、文字、热点标记或背景。`
 }
 export function generationMetadata(config: GeneratorSettings, key: string) {
   return {
     target: config.target,
     model: config.model,
     style: config.style,
-    prompt: config.target === 'icon' ? iconPrompt(config, key) : config.prompt,
+    prompt: assetPrompt(config, key),
     ...(config.target === 'icon'
       ? {
           iconKey: key,
           basePrompt: config.prompt,
           iconSubject:
             config.iconPrompts?.[key]?.trim() || iconSet.find((icon) => icon.key === key)!.subject,
+        }
+      : {}),
+    ...(config.target === 'cursor'
+      ? {
+          cursorKey: key,
+          basePrompt: config.prompt,
+          cursorSubject:
+            config.cursorPrompts?.[key]?.trim() ||
+            cursorSet.find((item) => item.key === key)!.subject,
         }
       : {}),
   }

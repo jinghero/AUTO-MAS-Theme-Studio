@@ -66,6 +66,10 @@ handler('studio:library-save', (input) => imageLibrary.save(input))
 handler('studio:library-list', (input) => imageLibrary.list(input))
 handler('studio:library-read', (input) => imageLibrary.read(input?.id))
 handler('studio:library-references', (input) => imageLibrary.readReferences(input?.id))
+handler('studio:guide', async () => {
+  await shell.openExternal('https://github.com/jinghero/AUTO-MAS-Theme-Studio/blob/main/guide.md')
+  return {}
+})
 handler('studio:library-folder', async () => {
   fs.mkdirSync(imageLibrary.directory, { recursive: true })
   const error = await shell.openPath(imageLibrary.directory)
@@ -97,7 +101,7 @@ handler('studio:describe', async (input) => {
   descriptionController = controller
   const timer = setTimeout(() => controller.abort('timeout'), 120000)
   try {
-    return { prompt: await describeReferences(input, controller.signal) }
+    return { plan: await describeReferences(input, controller.signal) }
   } finally {
     clearTimeout(timer)
     if (descriptionController === controller) descriptionController = null

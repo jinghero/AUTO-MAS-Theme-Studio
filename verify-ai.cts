@@ -28,6 +28,27 @@ const key = 'local-test-credential-for-fixture-only'
 const visionKey = 'local-vision-credential-for-fixture-only'
 const visionPrompt =
   '柔和手绘的森林背景，紫色与浅黄色的配色，主体放在画面右侧，左侧留白，低对比光线，无文字、无标志、无水印。'
+const { targetKeys } = require('./.build/app/generation.js') as typeof import('./src/generation')
+const { iconSet } = require('./.build/app/icons.js') as typeof import('./src/icons')
+const { cursorSet } = require('./.build/app/cursors.js') as typeof import('./src/cursors')
+const visionPlan: import('./src/types/studio').PromptPlan = {
+  targets: Object.fromEntries(
+    targetKeys.map((target) => [
+      target,
+      {
+        style: `${target} 专属参考图风格`,
+        prompt:
+          target === 'background' ? visionPrompt : `${target} 专属完整提示词，沿用参考图配色与主体`,
+      },
+    ]),
+  ) as import('./src/types/studio').PromptPlan['targets'],
+  iconPrompts: Object.fromEntries(
+    iconSet.map((icon) => [icon.key, `${icon.label}参考图专属提示词`]),
+  ),
+  cursorPrompts: Object.fromEntries(
+    cursorSet.map((cursor) => [cursor.key, `${cursor.label}参考图专属提示词`]),
+  ),
+}
 const requests: any[] = [],
   imageRequests: any[] = [],
   checks: string[] = [],
@@ -85,14 +106,23 @@ const server = http.createServer(async (request, response) => {
       response.end('{}')
       return
     }
+    const planText =
+      data.model === 'vision-plain'
+        ? visionPrompt
+        : data.model === 'vision-incomplete'
+          ? JSON.stringify({ ...visionPlan, cursorPrompts: {} })
+          : JSON.stringify(visionPlan)
     const content =
       data.model === 'vision-empty'
         ? null
         : data.model === 'vision-leak'
           ? request.headers.authorization!.slice(7)
           : data.model === 'vision-parts'
-            ? [{ type: 'text', text: visionPrompt }]
-            : visionPrompt
+            ? [
+                { type: 'text', text: planText.slice(0, planText.indexOf('参考图风格') + 1) },
+                { type: 'text', text: planText.slice(planText.indexOf('参考图风格') + 1) },
+              ]
+            : planText
     response.writeHead(200, { 'Content-Type': 'application/json' })
     response.end(
       JSON.stringify({
@@ -372,18 +402,86 @@ async function verify() {
     const visionContent = visionRequest.data.messages.find(
       (message) => message.role === 'user',
     ).content
-    assert(visionContent[0].text.includes('主题背景') && visionContent[0].text.includes('雨后竹林'))
+    assert(visionContent[0].text.includes('五类用途') && visionContent[0].text.includes('雨后竹林'))
+    const systemInstruction = visionRequest.data.messages.find(
+      (message) => message.role === 'system',
+    ).content
+    for (const target of targetKeys) assert(systemInstruction.includes(target))
+    assert(systemInstruction.includes('cursorPrompts') && systemInstruction.includes('pointer'))
     assert.deepEqual(
       visionContent.slice(1).map((part) => part.image_url.url),
       referenceUrls,
     )
+    await page.selectOption('#ai-target', 'cover')
+    assert(await page.locator('#ai-prompt-suggestion').isVisible())
+    await page.selectOption('#ai-target', 'background')
+    assert(await page.locator('#ai-prompt-suggestion').isVisible())
+    for (const target of targetKeys) {
+      await page.selectOption('#ai-suggested-target', target)
+      assert.equal(
+        await page.locator('#ai-suggested-style').inputValue(),
+        visionPlan.targets[target].style,
+      )
+      assert.equal(
+        await page.locator('#ai-suggested-prompt').inputValue(),
+        visionPlan.targets[target].prompt,
+      )
+    }
+    await page.selectOption('#ai-suggested-target', 'icon')
+    await page.locator('#ai-suggested-icons summary').click()
+    await page.getByLabel('主页候选专属提示词', { exact: true }).fill('叶片屋顶的小屋图标')
+    await page.selectOption('#ai-suggested-target', 'cursor')
+    await page.locator('#ai-suggested-cursors summary').click()
+    await page
+      .getByLabel('手形指针候选专属提示词', { exact: true })
+      .fill('奶油绿叶片装饰的手形指针')
+    await page.selectOption('#ai-suggested-target', 'background')
+    await page.locator('#ai-suggested-style').fill('背景候选风格已编辑')
     await page.locator('#ai-suggested-prompt').fill(visionPrompt + ' 不画软件界面。')
     await page.screenshot({
       path: path.join(qa, packaged ? 'ai-prompt-portable.png' : 'ai-prompt.png'),
     })
     await page.locator('#ai-use-prompt').click()
     assert.equal(await page.locator('#ai-prompt').inputValue(), visionPrompt + ' 不画软件界面。')
-    ok('看图模型收到多张参考图与用途风格，候选不覆盖原文，编辑后明确使用')
+    for (const target of targetKeys) {
+      await page.selectOption('#ai-target', target)
+      assert.equal(
+        await page.locator('#ai-style').inputValue(),
+        target === 'background' ? '背景候选风格已编辑' : visionPlan.targets[target].style,
+      )
+      assert.equal(
+        await page.locator('#ai-prompt').inputValue(),
+        target === 'background'
+          ? visionPrompt + ' 不画软件界面。'
+          : visionPlan.targets[target].prompt,
+      )
+    }
+    assert.equal(
+      await page.locator('#ai-cursor-prompt-pointer').inputValue(),
+      '奶油绿叶片装饰的手形指针',
+    )
+    await page.selectOption('#ai-target', 'icon')
+    assert.equal(await page.locator('#ai-icon-prompt-home').inputValue(), '叶片屋顶的小屋图标')
+    await page.selectOption('#ai-target', 'background')
+    pendingVision = null
+    await page.locator('#ai-vision-model').fill('vision-wait')
+    await page.locator('#ai-describe').click()
+    for (let count = 0; !pendingVision && count < 100; count++) await page.waitForTimeout(10)
+    assert(pendingVision)
+    await page.selectOption('#ai-target', 'cursor')
+    pendingVision.writeHead(200, { 'Content-Type': 'application/json' })
+    pendingVision.end(
+      JSON.stringify({ choices: [{ message: { content: JSON.stringify(visionPlan) } }] }),
+    )
+    await page.waitForFunction(
+      () => !(document.getElementById('ai-prompt-suggestion') as HTMLElement).hidden,
+    )
+    assert.equal(await page.locator('#ai-suggested-target').inputValue(), 'cursor')
+    await page.locator('#ai-discard-prompt').click()
+    await page.selectOption('#ai-target', 'background')
+    ok(
+      '一次看图生成五类风格与提示词、11 个图标和 3 个光标专属提示词，候选可编辑，统一应用并按用途独立保留',
+    )
     await page.locator('#ai-vision-separate').check()
     await page.locator('#ai-vision-url').fill(`${address}/separate/chat/completions`)
     await page.locator('#ai-vision-key').fill(visionKey)
@@ -403,6 +501,8 @@ async function verify() {
       ['vision-empty', '没有返回可用提示词'],
       ['vision-length', '未完整返回提示词'],
       ['vision-leak', '返回内容包含密钥'],
+      ['vision-plain', '未返回完整的整套提示词'],
+      ['vision-incomplete', '专属提示词'],
     ]) {
       await page.locator('#ai-vision-model').fill(model)
       await page.locator('#ai-describe').click()
@@ -571,7 +671,9 @@ async function verify() {
     await page.locator('#new').click()
     await page.locator('#confirm-ok').click()
     pendingVision.writeHead(200, { 'Content-Type': 'application/json' })
-    pendingVision.end(JSON.stringify({ choices: [{ message: { content: visionPrompt } }] }))
+    pendingVision.end(
+      JSON.stringify({ choices: [{ message: { content: JSON.stringify(visionPlan) } }] }),
+    )
     await page.waitForFunction(() =>
       (document.getElementById('ai-describe-status') as HTMLElement).textContent!.includes(
         '已改变',

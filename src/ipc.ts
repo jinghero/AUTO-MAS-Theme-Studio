@@ -1,6 +1,7 @@
 import type {
   GeneratedImage,
   ImageRequest,
+  PromptPlan,
   LibraryEntry,
   LibrarySaveInput,
   MascotPack,
@@ -17,7 +18,7 @@ export interface StudioContract {
   'studio:image': Call<{ url: string }, { info: { bytes: number } }>
   'studio:generate': Call<ImageRequest, { image: { url: string; mime: string; bytes: number } }>
   'studio:generate-cancel': Call<undefined, object>
-  'studio:describe': Call<ImageRequest, { prompt: string }>
+  'studio:describe': Call<ImageRequest, { plan: PromptPlan }>
   'studio:describe-cancel': Call<undefined, object>
   'studio:image-save': Call<{ url: string }, Saved<{ bytes: number }>>
   'studio:library-save': Call<LibrarySaveInput, { entry: LibraryEntry }>
@@ -34,6 +35,7 @@ export interface StudioContract {
     { referenceImages: import('./types/studio').ReferenceImage[]; referencesStored: boolean }
   >
   'studio:library-folder': Call<undefined, object>
+  'studio:guide': Call<undefined, object>
   'studio:mascot-tool': Call<StudioState | undefined, object>
   'studio:mascot-export': Call<StudioState, Saved<{ count: number }>>
   'studio:open': Call<{ bytes: Uint8Array; kind: 'theme' | 'mascot' }, Opened>
@@ -61,6 +63,7 @@ export const studioChannels = {
   readLibraryImage: 'studio:library-read',
   readLibraryReferences: 'studio:library-references',
   openLibraryFolder: 'studio:library-folder',
+  openGuide: 'studio:guide',
   openMascotTool: 'studio:mascot-tool',
   exportMascot: 'studio:mascot-export',
   open: 'studio:open',
